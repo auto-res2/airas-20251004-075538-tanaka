@@ -1,0 +1,3930 @@
+
+Input:
+You are a researcher with expertise in engineering in the field of machine learning.
+
+# Instructions
+- The content described in “Repository Content” corresponds to the GitHub repository of the method described in “Method.”
+- Please extract the following two pieces of information from “Repository Content”:
+    - experimental_code：Extract the implementation sections that are directly related to the method described in “Method.”
+    - experimental_info：Extract and output the experimental settings related to the method described in “Method.”
+
+# Method
+EMO replaces MLE with Earth Mover Distance (EMD) as the token-level probability distance measure to align model and human language distributions. It formulates EMD for auto-regressive language modeling as the minimum cost to transport probability mass from the model distribution to the data distribution. The transport cost function C(vi, vj) is defined using the cosine distance between token embeddings from a fixed, pre-trained language modeling head. To overcome the high computational complexity and non-differentiability of direct EMD computation, a tractable differentiable upper bound (DEMD) is derived, enabling efficient gradient-based optimization. DEMD harmonizes recall and precision, offers negative diversity awareness by weighting gradients based on expected transport cost, and improves train-test consistency. For stable training, especially with weaker models, the final loss function dynamically combines MLE and DEMD in a weighted manner.
+
+# Repository Content
+File Path: continual_finetuning/emo_llama.py
+Content:
+import torch
+from transformers import LlamaForCausalLM
+from typing import Optional, List
+from torch.nn import CrossEntropyLoss
+from transformers import LlamaModel
+
+
+class EMOLlamaForCausalLM(LlamaForCausalLM):
+    def __init__(self, config):
+        super().__init__(config)
+        self.model = LlamaModel(config)
+
+        self.lm_head = torch.nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+
+        # Initialize weights and apply final processing
+        self.post_init()
+
+    def forward(
+        self,
+        input_ids: torch.LongTensor = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[List[torch.FloatTensor]] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ):
+
+        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        outputs = self.model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            inputs_embeds=inputs_embeds,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+
+        # ======================================================================== #
+        #                   Compute the MLE loss
+        # ======================================================================== #
+        hidden_states = outputs[0]
+        logits = self.lm_head(hidden_states)
+        mask = labels[:, 1:].contiguous().view(-1)
+        mask = (mask!=-100).to(logits.dtype)
+        loss_fct = torch.nn.CrossEntropyLoss(reduction='none')
+        logits = logits[:, :-1, :].contiguous().view(-1, logits.shape[-1])
+        labels = labels[:, 1:].contiguous().view(-1)
+        mle_loss = loss_fct(logits, labels)
+
+        # ======================================================================== #
+        #                   Compute the EMO loss
+        # ======================================================================== #
+        labels_tmp = labels.clone()
+        labels_tmp[labels_tmp==(-100)] = 0
+        one_hot = torch.nn.functional.one_hot(labels_tmp, num_classes=self.config.vocab_size).to(logits.dtype)
+        stable_onehot = (one_hot+1e-15) / torch.linalg.vector_norm((one_hot+1e-15), ord=1, dim=-1, keepdim=True) # (bsz*seq_len, vocab_size)
+        embedding_matrix = self.cost_embedding # (vocab_size, hidden_size)
+        embedding_matrix = embedding_matrix / torch.linalg.vector_norm(embedding_matrix, ord=2, dim=1, keepdim=True)
+        p_contextual_repr = stable_onehot @ embedding_matrix # (bsz*seq_len, hidden_size)
+        q_grad = torch.log_softmax(logits, dim=-1).exp() # (bsz*seq_len, vocab_size)
+        gt_q = (q_grad * one_hot).detach()
+        q_final = q_grad - gt_q
+        q_contextual_repr = q_final @ embedding_matrix # (bsz*seq_len, hidden_size)
+        emo_loss = (1 - torch.sum(p_contextual_repr*q_contextual_repr, dim=-1)) # (bsz*seq_len,)
+
+        # ======================================================================== #
+        #                   Compose the final loss
+        # ======================================================================== #
+        loss = (torch.min((mle_loss / (emo_loss+1e-10)).detach(), torch.ones_like(mle_loss, dtype=mle_loss.dtype, device=mle_loss.device)*3.0) * emo_loss + mle_loss) * 0.5
+        loss = (loss * mask).sum() / (1e-15 + mask.sum())
+
+        output = (logits,) + outputs[1:]
+        return (loss,) + output if loss is not None else output
+
+
+class EMOLlama2ForCausalLM(LlamaForCausalLM):
+    def forward(
+        self,
+        input_ids: torch.LongTensor = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[List[torch.FloatTensor]] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ):
+
+        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)
+        outputs = self.model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            inputs_embeds=inputs_embeds,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+
+        # ======================================================================== #
+        #                   Compute the MLE loss
+        # ======================================================================== #
+        hidden_states = outputs[0]
+        logits = self.lm_head(hidden_states)
+        mask = labels[:, 1:].contiguous().view(-1)
+        mask = (mask!=-100).to(logits.dtype)
+        loss_fct = torch.nn.CrossEntropyLoss(reduction='none')
+        logits = logits[:, :-1, :].contiguous().view(-1, logits.shape[-1])
+        labels = labels[:, 1:].contiguous().view(-1)
+        mle_loss = loss_fct(logits, labels)
+
+        # ======================================================================== #
+        #                   Compute the EMO loss
+        # ======================================================================== #
+        labels_tmp = labels.clone()
+        labels_tmp[labels_tmp==(-100)] = 0
+        one_hot = torch.nn.functional.one_hot(labels_tmp, num_classes=self.config.vocab_size).to(logits.dtype)
+        stable_onehot = (one_hot+1e-15) / torch.linalg.vector_norm((one_hot+1e-15), ord=1, dim=-1, keepdim=True) # (bsz*seq_len, vocab_size)
+        embedding_matrix = self.cost_embedding # (vocab_size, hidden_size)
+        embedding_matrix = embedding_matrix / torch.linalg.vector_norm(embedding_matrix, ord=2, dim=1, keepdim=True)
+        p_contextual_repr = stable_onehot @ embedding_matrix.detach() # (bsz*seq_len, hidden_size)
+        q_grad = torch.log_softmax(logits, dim=-1).exp() # (bsz*seq_len, vocab_size)
+        gt_q = (q_grad * one_hot).detach()
+        q_final = q_grad - gt_q
+        q_contextual_repr = q_final @ embedding_matrix.detach() # (bsz*seq_len, hidden_size)
+        emo_loss = (1 - torch.sum(p_contextual_repr*q_contextual_repr, dim=-1)) # (bsz*seq_len,)
+
+        # ======================================================================== #
+        #                   Compose the final loss
+        # ======================================================================== #
+        loss = (emo_loss / (mle_loss+1e-10)).detach()*mle_loss + emo_loss
+        loss = (loss * mask).sum() / (1e-15 + mask.sum())
+
+        output = (logits,) + outputs[1:]
+        return (loss,) + output if loss is not None else output
+File Path: continual_finetuning/icl.py
+Content:
+from openicl import PPLInferencer, AccEvaluator, TopkRetriever
+from openicl import PromptTemplate
+from datasets import load_from_disk
+from argparse import ArgumentParser
+
+parser = ArgumentParser()
+parser.add_argument('--model_path', type=str, required=True)
+args = parser.parse_args()
+
+# SST-2
+sst2_tp_dict = {
+    0: '</E>Review: \"<X>\" It is positive.', 
+    1: '</E>Review: \"<X>\" It is negative.', 
+}
+sst2_template = PromptTemplate(sst2_tp_dict, column_token_map={'text' : '<X>'}, ice_token='</E>')
+
+# CR
+cr_tp_dict = {
+    1: "</E>Review: <X> It is positive.",
+    0: "</E>Review: <X> It is negative." 
+}
+cr_template = PromptTemplate(cr_tp_dict, {'text': '<X>'}, ice_token='</E>')
+
+# emo
+emo_tp_dict = {
+    0: "</E><X> It is unclear.",
+    1: "</E><X> It is happy.",
+    2: "</E><X> It is sad.",
+    3: "</E><X> It is angry.",
+}
+emo_template = PromptTemplate(emo_tp_dict, {'text': '<X>'}, ice_token='</E>')
+
+# subj
+subj_tp_dict = {
+    0: "</E><X> It is objective.",
+    1: "</E><X> It is subjective.",
+}
+subj_template = PromptTemplate(subj_tp_dict, {'text': '<X>'}, ice_token='</E>')
+
+# tweet_eval
+tweet_eval_emotion_tp_dict = {
+    0: "</E><X> It is anger.",
+    1: "</E><X> It is joy.",
+    2: "</E><X> It is optimism.",
+    3: "</E><X> It is sadness.",
+}
+tweet_eval_emotion_template = PromptTemplate(tweet_eval_emotion_tp_dict, {'text': '<X>'}, ice_token='</E>')
+
+# rotten tomatoes
+rt_tp_dict = {
+    1: "</E>Review: <X> It is positive",
+    0: "</E>Review: <X> It is negative" 
+}
+rt_template = PromptTemplate(rt_tp_dict, {'text': '<X>'}, ice_token='</E>')
+
+# SST-5
+sst5_tp_dict = {
+    0: "</E>Review: <X>\nSentiment: terrible",
+    1: "</E>Review: <X>\nSentiment: bad",
+    2: "</E>Review: <X>\nSentiment: okay",
+    3: "</E>Review: <X>\nSentiment: good",
+    4: "</E>Review: <X>\nSentiment: great",
+}
+sst5_template = PromptTemplate(sst5_tp_dict, column_token_map={'text' : '<X>'}, ice_token='</E>')
+
+# AG_NEWS
+ag_news_tp_dict = {
+    0: "</E>\"<X>\" It is about world.",
+    1: "</E>\"<X>\" It is about sports.",
+    2: "</E>\"<X>\" It is about business.",
+    3: "</E>\"<X>\" It is about science and technology.",
+}
+ag_news_template = PromptTemplate(ag_news_tp_dict, column_token_map={'text' : '<X>'}, ice_token='</E>')
+
+# TREC
+trec_tp_dict = {
+    0: "</E>\"<X>\" It is about abbreviation.",
+    1: "</E>\"<X>\" It is about entity.",
+    2: "</E>\"<X>\" It is about description and abstract concept.",
+    3: "</E>\"<X>\" It is about human being.",
+    4: "</E>\"<X>\" It is about location.",
+    5: "</E>\"<X>\" It is about numeric value."
+}
+trec_template = PromptTemplate(trec_tp_dict, column_token_map={'text' : '<X>'}, ice_token='</E>')
+
+# SNLI & MNLI
+xnli_tp_dict = {
+    0: '</E><X1>? Yes, <X2>',
+    1: '</E><X1>? Maybe, <X2>',
+    2: '</E><X1>? No, <X2>'
+}
+xnli_template = PromptTemplate(xnli_tp_dict, column_token_map={'premise' : '<X1>', 'hypothesis' : '<X2>'}, ice_token='</E>')
+
+# QNLI 
+qnli_tp_dict = {
+    0: "</E><X1> Can we know <X2>? Yes.",
+    1: "</E><X1> Can we know <X2>? No.",
+}
+qnli_template = PromptTemplate(qnli_tp_dict, column_token_map={'sentence' : '<X1>', 'question' : '<X2>'}, ice_token='</E>')
+
+# SICK 
+sick_tp_dict = {
+    0: "</E><X1> , <X2>",
+    1: "</E><X1> Maybe, <X2>",
+    2: "</E><X1> No, <X2>",
+}
+sick_template = PromptTemplate(sick_tp_dict, column_token_map={'sentence_A' : '<X1>', 'sentence_B' : '<X2>'}, ice_token='</E>')
+
+rte_tp_dict = {
+    0: "</E><X1> we can know: <X2>",
+    1: "</E><X1> we can not know: <X2>",
+}
+rte_template = PromptTemplate(rte_tp_dict, column_token_map={'sentence1' : '<X1>', 'sentence2' : '<X2>'}, ice_token='</E>')
+
+# Commonsense QA
+cmsqa_template=PromptTemplate(
+    {
+        'A': "</E>Answer the following question:\n</Q>\nAnswer: </Ans1>",
+        'B': "</E>Answer the following question:\n</Q>\nAnswer: </Ans2>",
+        'C': "</E>Answer the following question:\n</Q>\nAnswer: </Ans3>",
+        'D': "</E>Answer the following question:\n</Q>\nAnswer: </Ans4>",
+        'E': "</E>Answer the following question:\n</Q>\nAnswer: </Ans5>",
+    },
+    {'question':'</Q>', 'A': '</Ans1>', 'B': '</Ans2>', 'C': '</Ans3>', 'D': '</Ans4>', 'E': '</Ans5>'},
+    ice_token='</E>' 
+)
+
+fb_tp_dict = {
+    0: "</E><X> It is negative.",
+    1: "</E><X> It is neutral.",
+    2: "</E><X> It is positive.",
+}
+fb_template = PromptTemplate(fb_tp_dict, {'sentence': '<X>'}, ice_token='</E>')
+
+templates = {'sst2': sst2_template,
+             'snli': xnli_template,
+             'mnli': xnli_template,
+             "qnli": qnli_template,
+             "sst5": sst5_template,
+             "ag_news": ag_news_template,
+             "trec": trec_template,
+             "commonsense_qa": cmsqa_template,
+             "cr": cr_template,
+             "rt": rt_template,
+             "fb": fb_template,
+             "subj": subj_template,
+             "rte": rte_template,
+             "sick": sick_template,
+             "tweet_eval": tweet_eval_emotion_template,
+             "emo": emo_template
+            }
+
+
+from datasets import load_dataset
+from openicl import DatasetReader
+
+data_path = {'sst2': ["gpt3mix/sst2", None],
+             'snli': ['snli', None],
+             'mnli': ['LysandreJik/glue-mnli-train', None],
+             "qnli": ["glue", "qnli"],
+             "sst5": ["SetFit/sst5", None],
+             "ag_news": ["ag_news", None],
+             "trec": ["trec", None],
+             "commonsense_qa": ["commonsense_qa", None],
+             "cr": ["SetFit/CR", None],
+             "subj": ["SetFit/subj", None],
+             "rt": ["rotten_tomatoes", None],
+             "fb": ["financial_phrasebank", "sentences_allagree"],
+             "sick": ["sick", None],
+             "rte": ["glue", "rte"],
+             "tweet_eval": ["tweet_eval", "emotion"],
+             "emo": ['emo', None]
+            }
+
+input_columns={'sst2': ["text"],
+             'snli': ['premise', 'hypothesis'],
+             'mnli': ['premise', 'hypothesis'],
+             "qnli": ["sentence", "question"],
+             "sst5": ["text"],
+             "ag_news": ["text"],
+             "trec": ["text"],
+             "commonsense_qa": ['question', 'A', 'B', 'C', 'D', 'E'],
+             "cr": ["text"],
+             "subj": ["text"],
+             "rt": ["text"],
+             "fb": ["sentence"],
+             "sick": ["sentence_A", "sentence_B"],
+             "rte": ["sentence1", "sentence2"],
+             "tweet_eval": ["text"],
+             "emo": ["text"]
+            }
+
+output_column={'sst2': 'label',
+             'snli': 'label',
+             'mnli': 'label',
+             "qnli": 'label',
+             "sst5": 'label',
+             "ag_news": 'label',
+             "trec": 'coarse_label',
+             "commonsense_qa": "answerKey",
+             "cr": 'label',
+             "subj": 'label',
+             "rt": 'label',
+             "fb": 'label',
+             "sick": 'label',
+             "rte": 'label',
+             "tweet_eval": 'label',
+             "emo": 'label'
+            }
+
+# Change it for other tasks
+for task_name in ['tweet_eval', 'trec', 'sst2', 'subj', 'cr', 'rt', 'ag_news']:
+    path,name=data_path[task_name]
+    dataset = load_dataset(path=path,name=name)
+
+    if task_name == 'fb':
+        dataset['train'] = load_dataset(path=path, name=name, split='train[:50%]')
+        dataset['test'] = load_dataset(path=path, name=name, split='train[50%:]')
+    if task_name == 'ag_news':
+        dataset['train'] = load_dataset(path=path, name=name, split='train[:30%]')
+
+    # Preprocess for commonsense_qa
+    def pre_process(example):
+        for i in range(5):
+            example[chr(ord('A') + i)] = example['choices']['text'][i]
+        return example
+
+    if task_name=='commonsense_qa':
+        dataset=dataset.map(pre_process).remove_columns(['question_concept', 'id', 'choices'])
+
+    test_split={
+        'sst2': 'test',
+        'snli': 'test',
+        "sst5": 'test',
+        "ag_news": 'test',
+        "trec": 'test',
+        'mnli': 'validation', # cannot get gold labels for the test split
+        "qnli": 'validation',
+        "commonsense_qa": "validation",
+        "cr": 'test',
+        "rt": 'test',
+        "subj": 'test',
+        "fb": 'test',
+        "sick": 'test',
+        "rte": 'validation',
+        "tweet_eval": 'test',
+        "emo": 'test'
+    }
+
+    data=DatasetReader(dataset, input_columns=input_columns[task_name], output_column=output_column[task_name], test_split=test_split[task_name])
+
+
+    # If you only want to test part of the test set for faster running, you can use the following codes
+    # dataset['test'] = dataset['test'].select(list(range(100)))
+    # dataset['validation'] = dataset['validation'].select(list(range(100))) # trec,agnews don't have validation
+    # dataset['train'] = dataset['train'].select(list(range(100)))
+
+    retriever = TopkRetriever(data, ice_num=8, test_split=test_split[task_name])
+
+    inferencer = PPLInferencer(model_name=args.model_path, batch_size=8)
+    predictions = inferencer.inference(retriever, ice_template=templates[task_name], output_json_filename=f'topk_{task_name}')
+    scores = AccEvaluator().score(predictions=predictions, references=data.references)
+    print(f'{task_name}:', scores)
+File Path: continual_finetuning/llama_flash_attn_monkey_patch.py
+Content:
+from typing import List, Optional, Tuple
+
+import torch
+from torch import nn
+
+import transformers
+from transformers.models.llama.modeling_llama import apply_rotary_pos_emb
+
+from einops import rearrange
+
+try:
+    from flash_attn.flash_attn_interface import flash_attn_varlen_qkvpacked_func as flash_attn_unpadded_qkvpacked_func
+except ImportError:
+    from flash_attn.flash_attn_interface import flash_attn_unpadded_qkvpacked_func
+    
+from flash_attn.bert_padding import unpad_input, pad_input
+
+
+def forward(
+    self,
+    hidden_states: torch.Tensor,
+    attention_mask: Optional[torch.Tensor] = None,
+    position_ids: Optional[torch.Tensor] = None,
+    past_key_value: Optional[Tuple[torch.Tensor]] = None,
+    output_attentions: bool = False,
+    use_cache: bool = False,
+    **kwargs
+) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
+    """Input shape: Batch x Time x Channel
+
+    attention_mask: [bsz, q_len]
+    """
+    use_cache = False
+    bsz, q_len, _ = hidden_states.size()
+
+    query_states = (
+        self.q_proj(hidden_states)
+        .view(bsz, q_len, self.num_heads, self.head_dim)
+        .transpose(1, 2)
+    )
+    key_states = (
+        self.k_proj(hidden_states)
+        .view(bsz, q_len, self.num_heads, self.head_dim)
+        .transpose(1, 2)
+    )
+    value_states = (
+        self.v_proj(hidden_states)
+        .view(bsz, q_len, self.num_heads, self.head_dim)
+        .transpose(1, 2)
+    )
+    # [bsz, q_len, nh, hd]
+    # [bsz, nh, q_len, hd]
+
+    kv_seq_len = key_states.shape[-2]
+    assert past_key_value is None, "past_key_value is not supported"
+
+    cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
+    query_states, key_states = apply_rotary_pos_emb(
+        query_states, key_states, cos, sin, position_ids
+    )
+    # [bsz, nh, t, hd]
+    assert not output_attentions, "output_attentions is not supported"
+    assert not use_cache, "use_cache is not supported"
+
+    # Flash attention codes from
+    # https://github.com/HazyResearch/flash-attention/blob/main/flash_attn/flash_attention.py
+
+    # transform the data into the format required by flash attention
+    qkv = torch.stack(
+        [query_states, key_states, value_states], dim=2
+    )  # [bsz, nh, 3, q_len, hd]
+    qkv = qkv.transpose(1, 3)  # [bsz, q_len, 3, nh, hd]
+    # We have disabled _prepare_decoder_attention_mask in LlamaModel
+    # the attention_mask should be the same as the key_padding_mask
+    key_padding_mask = attention_mask
+
+    if key_padding_mask is None:
+        qkv = rearrange(qkv, "b s ... -> (b s) ...")
+        max_s = q_len
+        cu_q_lens = torch.arange(
+            0, (bsz + 1) * q_len, step=q_len, dtype=torch.int32, device=qkv.device
+        )
+        output = flash_attn_unpadded_qkvpacked_func(
+            qkv, cu_q_lens, max_s, 0.0, softmax_scale=None, causal=True
+        )
+        output = rearrange(output, "(b s) ... -> b s ...", b=bsz)
+    else:
+        nheads = qkv.shape[-2]
+        x = rearrange(qkv, "b s three h d -> b s (three h d)")
+        x_unpad, indices, cu_q_lens, max_s = unpad_input(x, key_padding_mask)
+        x_unpad = rearrange(
+            x_unpad, "nnz (three h d) -> nnz three h d", three=3, h=nheads
+        )
+        output_unpad = flash_attn_unpadded_qkvpacked_func(
+            x_unpad, cu_q_lens, max_s, 0.0, softmax_scale=None, causal=True
+        )
+        output = rearrange(
+            pad_input(
+                rearrange(output_unpad, "nnz h d -> nnz (h d)"), indices, bsz, q_len
+            ),
+            "b s (h d) -> b s h d",
+            h=nheads,
+        )
+    return self.o_proj(rearrange(output, "b s h d -> b s (h d)")), None, None
+
+
+# Disable the transformation of the attention mask in LlamaModel as the flash attention
+# requires the attention mask to be the same as the key_padding_mask
+def _prepare_decoder_attention_mask(
+    self, attention_mask, input_shape, inputs_embeds, past_key_values_length
+):
+    # [bsz, seq_len]
+    return attention_mask
+
+
+def replace_llama_attn_with_flash_attn():
+    transformers.models.llama.modeling_llama.LlamaModel._prepare_decoder_attention_mask = (
+        _prepare_decoder_attention_mask
+    )
+    transformers.models.llama.modeling_llama.LlamaAttention.forward = forward
+File Path: continual_finetuning/merge_lora.py
+Content:
+import argparse
+from peft import PeftConfig, PeftModel
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import torch
+
+def parse_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--lora_model_name_or_path", type=str, required=True)
+    parser.add_argument("--base_model_name_or_path", type=str)
+    parser.add_argument("--output_dir", type=str)
+    return parser.parse_args()
+
+
+if __name__ == "__main__":
+    args = parse_args()
+    peft_config = PeftConfig.from_pretrained(args.lora_model_name_or_path)
+    print("Loading the base model...")
+    base_model = AutoModelForCausalLM.from_pretrained(
+        args.base_model_name_or_path if args.base_model_name_or_path else peft_config.base_model_name_or_path,
+        torch_dtype=torch.float16,
+        device_map='cuda'
+    )
+    print("Loading the lora model...")
+    lora_model = PeftModel.from_pretrained(base_model, args.lora_model_name_or_path)
+    print("Merging the lora modules...")
+    merged_model = lora_model.base_model.merge_and_unload()
+    output_dir = args.output_dir if args.output_dir else args.lora_model_name_or_path
+    tokenizer = AutoTokenizer.from_pretrained(args.lora_model_name_or_path)
+    embedding_size = merged_model.get_input_embeddings().weight.shape[0]
+    if len(tokenizer) > embedding_size:
+        print(f"The vocabulary size of the tokenizer in the lora model folder contains {len(tokenizer)-embedding_size} more tokens than the base model.")
+        print("Resizing the token embeddings of the merged model...")
+        merged_model.resize_token_embeddings(len(tokenizer))
+    print(f"Saving to {output_dir}...")
+    merged_model.save_pretrained(output_dir)
+    tokenizer.save_pretrained(output_dir)
+File Path: continual_finetuning/run_clm_trainer_emo.py
+Content:
+#!/usr/bin/env python
+# coding=utf-8
+# Copyright 2020 The HuggingFace Inc. team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""
+Fine-tuning the library models for causal language modeling (GPT, GPT-2, CTRL, ...) on a text file or a dataset.
+
+Here is the full list of checkpoints on the hub that can be fine-tuned by this script:
+https://huggingface.co/models?filter=text-generation
+"""
+# You can also adapt this script on your own causal language modeling task. Pointers for this are left as comments.
+
+import logging
+import math
+import os
+import sys
+from dataclasses import dataclass, field
+from itertools import chain
+from typing import Optional
+import copy
+
+import datasets
+import evaluate
+import torch
+from datasets import load_dataset, load_from_disk
+
+import transformers
+from transformers import (
+    CONFIG_MAPPING,
+    MODEL_FOR_CAUSAL_LM_MAPPING,
+    AutoConfig,
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    HfArgumentParser,
+    Trainer,
+    TrainingArguments,
+    default_data_collator,
+    is_torch_tpu_available,
+    set_seed,
+)
+from transformers.trainer import EMDTrainer
+from transformers.testing_utils import CaptureLogger
+from transformers.trainer_utils import get_last_checkpoint
+from transformers.utils import check_min_version, send_example_telemetry
+from transformers.utils.versions import require_version
+from peft import (
+    LoraConfig,
+    get_peft_model,
+    get_peft_model_state_dict,
+    prepare_model_for_int8_training,
+    set_peft_model_state_dict,
+    PeftModel
+)
+
+# load customized model
+from emo_llama import EMOLlamaForCausalLM, EMOLlama2ForCausalLM
+
+logger = logging.getLogger(__name__)
+
+MODEL_CONFIG_CLASSES = list(MODEL_FOR_CAUSAL_LM_MAPPING.keys())
+MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
+
+
+@dataclass
+class ModelArguments:
+    """
+    Arguments pertaining to which model/config/tokenizer we are going to fine-tune, or train from scratch.
+    """
+
+    model_name_or_path: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": (
+                "The model checkpoint for weights initialization.Don't set if you want to train a model from scratch."
+            )
+        },
+    )
+    model_type: Optional[str] = field(
+        default=None,
+        metadata={"help": "If training from scratch, pass a model type from the list: " + ", ".join(MODEL_TYPES)},
+    )
+    config_overrides: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Override some existing default config settings when a model is trained from scratch. Example: "
+                "n_embd=10,resid_pdrop=0.2,scale_attn_weights=false,summary_type=cls_index"
+            )
+        },
+    )
+    config_name: Optional[str] = field(
+        default=None, metadata={"help": "Pretrained config name or path if not the same as model_name"}
+    )
+    tokenizer_name: Optional[str] = field(
+        default=None, metadata={"help": "Pretrained tokenizer name or path if not the same as model_name"}
+    )
+    cache_dir: Optional[str] = field(
+        default=None,
+        metadata={"help": "Where do you want to store the pretrained models downloaded from huggingface.co"},
+    )
+    use_fast_tokenizer: bool = field(
+        default=True,
+        metadata={"help": "Whether to use one of the fast tokenizer (backed by the tokenizers library) or not."},
+    )
+    model_revision: str = field(
+        default="main",
+        metadata={"help": "The specific model version to use (can be a branch name, tag name or commit id)."},
+    )
+    use_auth_token: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "Will use the token generated when running `huggingface-cli login` (necessary to use this script "
+                "with private models)."
+            )
+        },
+    )
+    torch_dtype: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Override the default `torch.dtype` and load the model under this dtype. If `auto` is passed, the "
+                "dtype will be automatically derived from the model's weights."
+            ),
+            "choices": ["auto", "bfloat16", "float16", "float32"],
+        },
+    )
+    low_cpu_mem_usage: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "It is an option to create the model as an empty shell, then only materialize its parameters when the pretrained weights are loaded."
+                "set True will benefit LLM loading time and RAM consumption."
+            )
+        },
+    )
+    mode: str = field(
+        default="mle",
+        metadata={"help": "The learning objective for language model training"},
+    )
+    mixing_ratio: float = field(
+        default=0.80,
+    )
+
+    lora: bool = field(
+        default=True,
+    )
+
+    def __post_init__(self):
+        if self.config_overrides is not None and (self.config_name is not None or self.model_name_or_path is not None):
+            raise ValueError(
+                "--config_overrides can't be used in combination with --config_name or --model_name_or_path"
+            )
+
+
+@dataclass
+class DataTrainingArguments:
+    """
+    Arguments pertaining to what data we are going to input our model for training and eval.
+    """
+
+    dataset_name: Optional[str] = field(
+        default=None, metadata={"help": "The name of the dataset to use (via the datasets library)."}
+    )
+    dataset_config_name: Optional[str] = field(
+        default=None, metadata={"help": "The configuration name of the dataset to use (via the datasets library)."}
+    )
+    train_file: Optional[str] = field(default=None, metadata={"help": "The input training data file (a text file)."})
+    validation_file: Optional[str] = field(
+        default=None,
+        metadata={"help": "An optional input evaluation data file to evaluate the perplexity on (a text file)."},
+    )
+    max_train_samples: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": (
+                "For debugging purposes or quicker training, truncate the number of training examples to this "
+                "value if set."
+            )
+        },
+    )
+    max_eval_samples: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": (
+                "For debugging purposes or quicker training, truncate the number of evaluation examples to this "
+                "value if set."
+            )
+        },
+    )
+    streaming: bool = field(default=False, metadata={"help": "Enable streaming mode"})
+    block_size: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Optional input sequence length after tokenization. "
+                "The training dataset will be truncated in block of this size for training. "
+                "Default to the model max input length for single sentence inputs (take into account special tokens)."
+            )
+        },
+    )
+    overwrite_cache: bool = field(
+        default=False, metadata={"help": "Overwrite the cached training and evaluation sets"}
+    )
+    validation_split_percentage: Optional[int] = field(
+        default=5,
+        metadata={
+            "help": "The percentage of the train set used as validation set in case there's no validation split"
+        },
+    )
+    preprocessing_num_workers: Optional[int] = field(
+        default=None,
+        metadata={"help": "The number of processes to use for the preprocessing."},
+    )
+    keep_linebreaks: bool = field(
+        default=True, metadata={"help": "Whether to keep line breaks when using TXT files or not."}
+    )
+
+    def __post_init__(self):
+        if self.streaming:
+            require_version("datasets>=2.0.0", "The streaming feature requires `datasets>=2.0.0`")
+
+        if self.dataset_name is None and self.train_file is None and self.validation_file is None:
+            raise ValueError("Need either a dataset name or a training/validation file.")
+        else:
+            if self.train_file is not None:
+                extension = self.train_file.split(".")[-1]
+                assert extension in ["csv", "json", "txt"], "`train_file` should be a csv, a json or a txt file."
+            if self.validation_file is not None:
+                extension = self.validation_file.split(".")[-1]
+                assert extension in ["csv", "json", "txt"], "`validation_file` should be a csv, a json or a txt file."
+
+
+def main():
+    # See all possible arguments in src/transformers/training_args.py
+    # or by passing the --help flag to this script.
+    # We now keep distinct sets of args, for a cleaner separation of concerns.
+
+    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
+    if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
+        # If we pass only one argument to the script and it's the path to a json file,
+        # let's parse it to get our arguments.
+        model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
+    else:
+        model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+
+    # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
+    # information sent is the one passed as arguments along with your Python/PyTorch versions.
+    send_example_telemetry("run_clm", model_args, data_args)
+
+    # Setup logging
+    logging.basicConfig(
+        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+        datefmt="%m/%d/%Y %H:%M:%S",
+        handlers=[logging.StreamHandler(sys.stdout)],
+    )
+
+    if training_args.should_log:
+        # The default of training_args.log_level is passive, so we set log level at info here to have that default.
+        transformers.utils.logging.set_verbosity_info()
+
+    log_level = training_args.get_process_log_level()
+    logger.setLevel(log_level)
+    datasets.utils.logging.set_verbosity(log_level)
+    transformers.utils.logging.set_verbosity(log_level)
+    transformers.utils.logging.enable_default_handler()
+    transformers.utils.logging.enable_explicit_format()
+
+    # Log on each process the small summary:
+    logger.warning(
+        f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
+        + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
+    )
+    logger.info(f"Training/evaluation parameters {training_args}")
+
+    # Detecting last checkpoint.
+    last_checkpoint = None
+    if os.path.isdir(training_args.output_dir) and training_args.do_train and not training_args.overwrite_output_dir:
+        last_checkpoint = get_last_checkpoint(training_args.output_dir)
+        if last_checkpoint is None and len(os.listdir(training_args.output_dir)) > 0:
+            raise ValueError(
+                f"Output directory ({training_args.output_dir}) already exists and is not empty. "
+                "Use --overwrite_output_dir to overcome."
+            )
+        elif last_checkpoint is not None and training_args.resume_from_checkpoint is None:
+            logger.info(
+                f"Checkpoint detected, resuming training at {last_checkpoint}. To avoid this behavior, change "
+                "the `--output_dir` or add `--overwrite_output_dir` to train from scratch."
+            )
+
+    # Set seed before initializing model.
+    set_seed(training_args.seed)
+
+    # Get the datasets: you can either provide your own CSV/JSON/TXT training and evaluation files (see below)
+    # or just provide the name of one of the public datasets available on the hub at https://huggingface.co/datasets/
+    # (the dataset will be downloaded automatically from the datasets Hub).
+    #
+    # For CSV/JSON files, this script will use the column called 'text' or the first column if no column called
+    # 'text' is found. You can easily tweak this behavior (see below).
+    #
+    # In distributed training, the load_dataset function guarantee that only one local process can concurrently
+    # download the dataset.
+    if data_args.dataset_name is not None:
+        # Downloading and loading a dataset from the hub.
+        raw_datasets = load_dataset(
+            data_args.dataset_name,
+            data_args.dataset_config_name,
+            cache_dir=model_args.cache_dir,
+            use_auth_token=True if model_args.use_auth_token else None,
+            streaming=data_args.streaming,
+        )
+        if "validation" not in raw_datasets.keys():
+            raw_datasets["validation"] = load_dataset(
+                data_args.dataset_name,
+                data_args.dataset_config_name,
+                split=f"train[:{data_args.validation_split_percentage}%]",
+                cache_dir=model_args.cache_dir,
+                use_auth_token=True if model_args.use_auth_token else None,
+                streaming=data_args.streaming,
+            )
+            raw_datasets["train"] = load_dataset(
+                data_args.dataset_name,
+                data_args.dataset_config_name,
+                split=f"train[{data_args.validation_split_percentage}%:]",
+                cache_dir=model_args.cache_dir,
+                use_auth_token=True if model_args.use_auth_token else None,
+                streaming=data_args.streaming,
+            )
+    else:
+        data_files = {}
+        dataset_args = {}
+        if data_args.train_file is not None:
+            data_files["train"] = data_args.train_file
+        if data_args.validation_file is not None:
+            data_files["validation"] = data_args.validation_file
+        extension = (
+            data_args.train_file.split(".")[-1]
+            if data_args.train_file is not None
+            else data_args.validation_file.split(".")[-1]
+        )
+        if extension == "txt":
+            extension = "text"
+            dataset_args["keep_linebreaks"] = data_args.keep_linebreaks
+        raw_datasets = load_dataset(
+            extension,
+            data_files=data_files,
+            cache_dir=model_args.cache_dir,
+            use_auth_token=True if model_args.use_auth_token else None,
+            **dataset_args,
+        )
+        # If no validation data is there, validation_split_percentage will be used to divide the dataset.
+        if "validation" not in raw_datasets.keys():
+            raw_datasets["validation"] = load_dataset(
+                extension,
+                data_files=data_files,
+                split=f"train[:{data_args.validation_split_percentage}%]",
+                cache_dir=model_args.cache_dir,
+                use_auth_token=True if model_args.use_auth_token else None,
+                **dataset_args,
+            )
+            raw_datasets["train"] = load_dataset(
+                extension,
+                data_files=data_files,
+                split=f"train[{data_args.validation_split_percentage}%:]",
+                cache_dir=model_args.cache_dir,
+                use_auth_token=True if model_args.use_auth_token else None,
+                **dataset_args,
+            )
+
+    # See more about loading any type of standard or custom dataset (from files, python dict, pandas DataFrame, etc) at
+    # https://huggingface.co/docs/datasets/loading_datasets.html.
+
+    # Load pretrained model and tokenizer
+    #
+    # Distributed training:
+    # The .from_pretrained methods guarantee that only one local process can concurrently
+    # download model & vocab.
+
+    config_kwargs = {
+        "cache_dir": model_args.cache_dir,
+        "revision": model_args.model_revision,
+        "use_auth_token": True if model_args.use_auth_token else None,
+    }
+    if model_args.config_name:
+        config = AutoConfig.from_pretrained(model_args.config_name, **config_kwargs)
+    elif model_args.model_name_or_path:
+        config = AutoConfig.from_pretrained(model_args.model_name_or_path, **config_kwargs)
+    else:
+        config = CONFIG_MAPPING[model_args.model_type]()
+        logger.warning("You are instantiating a new config instance from scratch.")
+        if model_args.config_overrides is not None:
+            logger.info(f"Overriding config: {model_args.config_overrides}")
+            config.update_from_string(model_args.config_overrides)
+            logger.info(f"New config: {config}")
+
+    tokenizer_kwargs = {
+        "cache_dir": model_args.cache_dir,
+        "use_fast": model_args.use_fast_tokenizer,
+        "revision": model_args.model_revision,
+        "use_auth_token": True if model_args.use_auth_token else None,
+    }
+    if model_args.tokenizer_name:
+        tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name, **tokenizer_kwargs)
+    elif model_args.model_name_or_path:
+        tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path, **tokenizer_kwargs)
+    else:
+        raise ValueError(
+            "You are instantiating a new tokenizer from scratch. This is not supported by this script."
+            "You can do it from another script, save it, and load it from here, using --tokenizer_name."
+        )
+
+    if model_args.model_name_or_path:
+        if model_args.mode == 'mle':
+            MODEL_CLASS = AutoModelForCausalLM
+        elif model_args.mode == 'emo':
+            MODEL_CLASS = EMOLlamaForCausalLM
+        elif model_args.mode == 'emo2':
+            MODEL_CLASS = EMOLlama2ForCausalLM
+        # replace llama attention with Flash Attention
+        from llama_flash_attn_monkey_patch import replace_llama_attn_with_flash_attn
+        replace_llama_attn_with_flash_attn()
+        logger.info(f"llama attn replaced with flash attn")
+        tokenizer.pad_token_id = 0
+        tokenizer.padding_side = "left"
+        logger.info(f"Using model class: {MODEL_CLASS}")
+        model = MODEL_CLASS.from_pretrained(
+            model_args.model_name_or_path,
+            from_tf=bool(".ckpt" in model_args.model_name_or_path),
+            config=config,
+            cache_dir=model_args.cache_dir,
+            revision=model_args.model_revision,
+            torch_dtype=torch.float16,
+            device_map='auto'
+        )
+        if model_args.mode != 'mle':
+        # initialize cost embedding E for EMO from a pre-trained LLM
+            llama13b = AutoModelForCausalLM.from_pretrained('/cpfs01/shared/public/public_hdd/llmeval/model_weights/hf_hub/models--TheBloke--Llama-2-13B-fp16/snapshots/b2e65e8ad4bb35e5abaee0170ebd5fc2134a50bb', torch_dtype=torch.float16, device_map='auto')
+            model.register_buffer('cost_embedding', llama13b.lm_head.weight.data)
+            print('Shape of cost embedding:', model.cost_embedding.shape)
+            print('Shape of current lm head:', model.lm_head.weight.data.shape)
+            del llama13b
+        if model_args.lora:
+            logger.info("LoRA is activated")
+            # setup LoRA for efficient fine-tuning
+            lora_config = LoraConfig(
+                r=32,
+                lora_alpha=16,
+                lora_dropout=0.05,
+                bias="none",
+                inference_mode=False,
+                task_type="CAUSAL_LM",)
+            model = get_peft_model(model, lora_config)
+            model.print_trainable_parameters()
+        model.config.reduction = 'mean'
+        logger.info(f"Model class: {model.__class__}")
+    else:
+        model = AutoModelForCausalLM.from_config(config)
+        n_params = sum({p.data_ptr(): p.numel() for p in model.parameters()}.values())
+        logger.info(f"Training new model from scratch - Total size={n_params/2**20:.2f}M params")
+
+    # We resize the embeddings only when necessary to avoid index errors. If you are creating a model from scratch
+    # on a small vocab and want a smaller embedding size, remove this test.
+    embedding_size = model.get_input_embeddings().weight.shape[0]
+    if len(tokenizer) > embedding_size:
+        model.resize_token_embeddings(len(tokenizer))
+
+    # Preprocessing the datasets.
+    # First we tokenize all the texts.
+    if training_args.do_train:
+        column_names = list(raw_datasets["train"].features)
+    else:
+        column_names = list(raw_datasets["validation"].features)
+    text_column_name = "text" if "text" in column_names else column_names[0]
+
+    # since this will be pickled to avoid _LazyModule error in Hasher force logger loading before tokenize_function
+    tok_logger = transformers.utils.logging.get_logger("transformers.tokenization_utils_base")
+
+    def tokenize_function(examples):
+        with CaptureLogger(tok_logger) as cl:
+            output = tokenizer(examples[text_column_name])
+        # clm input could be much much longer than block_size
+        if "Token indices sequence length is longer than the" in cl.out:
+            tok_logger.warning(
+                "^^^^^^^^^^^^^^^^ Please ignore the warning above - this long input will be chunked into smaller bits"
+                " before being passed to the model."
+            )
+        return output
+
+    with training_args.main_process_first(desc="dataset map tokenization"):
+        if not data_args.streaming:
+            tokenized_datasets = raw_datasets.map(
+                tokenize_function,
+                batched=True,
+                num_proc=data_args.preprocessing_num_workers,
+                remove_columns=column_names,
+                load_from_cache_file=not data_args.overwrite_cache,
+                desc="Running tokenizer on dataset",
+            )
+        else:
+            tokenized_datasets = raw_datasets.map(
+                tokenize_function,
+                batched=True,
+                remove_columns=column_names,
+            )
+
+    if data_args.block_size is None:
+        block_size = tokenizer.model_max_length
+        if block_size > 1024:
+            logger.warning(
+                "The chosen tokenizer supports a `model_max_length` that is longer than the default `block_size` value"
+                " of 1024. If you would like to use a longer `block_size` up to `tokenizer.model_max_length` you can"
+                " override this default with `--block_size xxx`."
+            )
+            block_size = 1024
+    else:
+        if data_args.block_size > tokenizer.model_max_length:
+            logger.warning(
+                f"The block_size passed ({data_args.block_size}) is larger than the maximum length for the model"
+                f"({tokenizer.model_max_length}). Using block_size={tokenizer.model_max_length}."
+            )
+        block_size = min(data_args.block_size, tokenizer.model_max_length)
+
+    # Main data processing function that will concatenate all texts from our dataset and generate chunks of block_size.
+    def group_texts(examples):
+        # Concatenate all texts.
+        concatenated_examples = {k: list(chain(*examples[k])) for k in examples.keys()}
+        total_length = len(concatenated_examples[list(examples.keys())[0]])
+        # We drop the small remainder, and if the total_length < block_size  we exclude this batch and return an empty dict.
+        # We could add padding if the model supported it instead of this drop, you can customize this part to your needs.
+        total_length = (total_length // block_size) * block_size
+        # Split by chunks of max_len.
+        result = {
+            k: [t[i : i + block_size] for i in range(0, total_length, block_size)]
+            for k, t in concatenated_examples.items()
+        }
+        result["labels"] = result["input_ids"].copy()
+        return result
+
+    # Note that with `batched=True`, this map processes 1,000 texts together, so group_texts throws away a remainder
+    # for each of those groups of 1,000 texts. You can adjust that batch_size here but a higher value might be slower
+    # to preprocess.
+    #
+    # To speed up this part, we use multiprocessing. See the documentation of the map method for more information:
+    # https://huggingface.co/docs/datasets/package_reference/main_classes.html#datasets.Dataset.map
+
+    with training_args.main_process_first(desc="grouping texts together"):
+        if not data_args.streaming:
+            lm_datasets = tokenized_datasets.map(
+                group_texts,
+                batched=True,
+                num_proc=data_args.preprocessing_num_workers,
+                load_from_cache_file=not data_args.overwrite_cache,
+                desc=f"Grouping texts in chunks of {block_size}",
+            )
+        else:
+            lm_datasets = tokenized_datasets.map(
+                group_texts,
+                batched=True,
+            )
+
+    if training_args.do_train:
+        if "train" not in tokenized_datasets:
+            raise ValueError("--do_train requires a train dataset")
+        train_dataset = lm_datasets["train"]
+        if data_args.max_train_samples is not None:
+            max_train_samples = min(len(train_dataset), data_args.max_train_samples)
+            train_dataset = train_dataset.select(range(max_train_samples))
+
+    if training_args.do_eval:
+        if "validation" not in tokenized_datasets:
+            raise ValueError("--do_eval requires a validation dataset")
+        eval_dataset = lm_datasets["validation"]
+        if data_args.max_eval_samples is not None:
+            max_eval_samples = min(len(eval_dataset), data_args.max_eval_samples)
+            eval_dataset = eval_dataset.select(range(max_eval_samples))
+
+        def preprocess_logits_for_metrics(logits, labels):
+            if isinstance(logits, tuple):
+                # Depending on the model and config, logits may contain extra tensors,
+                # like past_key_values, but logits always come first
+                logits = logits[0]
+            return logits.argmax(dim=-1)
+
+        metric = evaluate.load("accuracy")
+
+        def compute_metrics(eval_preds):
+            preds, labels = eval_preds
+            # preds have the same shape as the labels, after the argmax(-1) has been calculated
+            # by preprocess_logits_for_metrics but we need to shift the labels
+            labels = labels[:, 1:].reshape(-1)
+            preds = preds[:, :-1].reshape(-1)
+            return metric.compute(predictions=preds, references=labels)
+
+    # Initialize our Trainer
+    training_args.save_strategy = "no"
+    TRAINER_CLASS = Trainer
+    trainer = TRAINER_CLASS(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset if training_args.do_train else None,
+        eval_dataset=eval_dataset if training_args.do_eval else None,
+        tokenizer=tokenizer,
+        # Data collator will default to DataCollatorWithPadding, so we change it.
+        data_collator=default_data_collator,
+        compute_metrics=compute_metrics if training_args.do_eval and not is_torch_tpu_available() else None,
+        preprocess_logits_for_metrics=preprocess_logits_for_metrics
+        if training_args.do_eval and not is_torch_tpu_available()
+        else None,
+    )
+
+    # Training
+    if training_args.do_train:
+        checkpoint = None
+        if training_args.resume_from_checkpoint is not None:
+            checkpoint = training_args.resume_from_checkpoint
+        elif last_checkpoint is not None:
+            checkpoint = last_checkpoint
+        train_result = trainer.train(resume_from_checkpoint=checkpoint)
+        trainer.save_model()  # Saves the tokenizer too for easy upload
+        if model_args.lora and hasattr(model, 'base_model'):
+            model.base_model.save_pretrained(training_args.output_dir) # save the backbone LLM when using peft
+
+        metrics = train_result.metrics
+
+        max_train_samples = (
+            data_args.max_train_samples if data_args.max_train_samples is not None else len(train_dataset)
+        )
+        metrics["train_samples"] = min(max_train_samples, len(train_dataset))
+
+        trainer.log_metrics("train", metrics)
+        trainer.save_metrics("train", metrics)
+        trainer.save_state()
+
+    # Evaluation
+    if training_args.do_eval:
+        logger.info("*** Evaluate ***")
+
+        metrics = trainer.evaluate()
+
+        max_eval_samples = data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset)
+        metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
+        try:
+            perplexity = math.exp(metrics["eval_loss"])
+        except OverflowError:
+            perplexity = float("inf")
+        metrics["perplexity"] = perplexity
+
+        trainer.log_metrics("eval", metrics)
+        trainer.save_metrics("eval", metrics)
+
+    kwargs = {"finetuned_from": model_args.model_name_or_path, "tasks": "text-generation"}
+    if data_args.dataset_name is not None:
+        kwargs["dataset_tags"] = data_args.dataset_name
+        if data_args.dataset_config_name is not None:
+            kwargs["dataset_args"] = data_args.dataset_config_name
+            kwargs["dataset"] = f"{data_args.dataset_name} {data_args.dataset_config_name}"
+        else:
+            kwargs["dataset"] = data_args.dataset_name
+
+    if training_args.push_to_hub:
+        trainer.push_to_hub(**kwargs)
+    else:
+        trainer.create_model_card(**kwargs)
+
+
+def _mp_fn(index):
+    # For xla_spawn (TPUs)
+    main()
+
+
+if __name__ == "__main__":
+    main()
+File Path: continual_finetuning/run_clm_trainer_emo_fsdp.py
+Content:
+#!/usr/bin/env python
+# coding=utf-8
+# Copyright 2020 The HuggingFace Inc. team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""
+Fine-tuning the library models for causal language modeling (GPT, GPT-2, CTRL, ...) on a text file or a dataset.
+
+Here is the full list of checkpoints on the hub that can be fine-tuned by this script:
+https://huggingface.co/models?filter=text-generation
+"""
+# You can also adapt this script on your own causal language modeling task. Pointers for this are left as comments.
+
+import logging
+import math
+import os
+import sys
+from dataclasses import dataclass, field
+from itertools import chain
+from typing import Optional
+import copy
+
+import datasets
+import evaluate
+import torch
+from datasets import load_dataset, load_from_disk
+
+import transformers
+from transformers import (
+    CONFIG_MAPPING,
+    MODEL_FOR_CAUSAL_LM_MAPPING,
+    AutoConfig,
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    HfArgumentParser,
+    Trainer,
+    TrainingArguments,
+    default_data_collator,
+    is_torch_tpu_available,
+    set_seed,
+)
+from transformers.testing_utils import CaptureLogger
+from transformers.trainer_utils import get_last_checkpoint
+from transformers.utils import check_min_version, send_example_telemetry
+from transformers.utils.versions import require_version
+# load customized model
+from emo_llama import EMOLlamaForCausalLM, EMOLlama2ForCausalLM
+
+logger = logging.getLogger(__name__)
+
+
+MODEL_CONFIG_CLASSES = list(MODEL_FOR_CAUSAL_LM_MAPPING.keys())
+MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
+
+
+@dataclass
+class ModelArguments:
+    """
+    Arguments pertaining to which model/config/tokenizer we are going to fine-tune, or train from scratch.
+    """
+
+    model_name_or_path: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": (
+                "The model checkpoint for weights initialization.Don't set if you want to train a model from scratch."
+            )
+        },
+    )
+    model_type: Optional[str] = field(
+        default=None,
+        metadata={"help": "If training from scratch, pass a model type from the list: " + ", ".join(MODEL_TYPES)},
+    )
+    config_overrides: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Override some existing default config settings when a model is trained from scratch. Example: "
+                "n_embd=10,resid_pdrop=0.2,scale_attn_weights=false,summary_type=cls_index"
+            )
+        },
+    )
+    config_name: Optional[str] = field(
+        default=None, metadata={"help": "Pretrained config name or path if not the same as model_name"}
+    )
+    tokenizer_name: Optional[str] = field(
+        default=None, metadata={"help": "Pretrained tokenizer name or path if not the same as model_name"}
+    )
+    cache_dir: Optional[str] = field(
+        default=None,
+        metadata={"help": "Where do you want to store the pretrained models downloaded from huggingface.co"},
+    )
+    use_fast_tokenizer: bool = field(
+        default=True,
+        metadata={"help": "Whether to use one of the fast tokenizer (backed by the tokenizers library) or not."},
+    )
+    model_revision: str = field(
+        default="main",
+        metadata={"help": "The specific model version to use (can be a branch name, tag name or commit id)."},
+    )
+    use_auth_token: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "Will use the token generated when running `huggingface-cli login` (necessary to use this script "
+                "with private models)."
+            )
+        },
+    )
+    torch_dtype: Optional[str] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Override the default `torch.dtype` and load the model under this dtype. If `auto` is passed, the "
+                "dtype will be automatically derived from the model's weights."
+            ),
+            "choices": ["auto", "bfloat16", "float16", "float32"],
+        },
+    )
+    low_cpu_mem_usage: bool = field(
+        default=False,
+        metadata={
+            "help": (
+                "It is an option to create the model as an empty shell, then only materialize its parameters when the pretrained weights are loaded."
+                "set True will benefit LLM loading time and RAM consumption."
+            )
+        },
+    )
+    mode: str = field(
+        default="mle",
+        metadata={"help": "The learning objective for language model training"},
+    )
+    mixing_ratio: float = field(
+        default=0.80,
+    )
+
+    def __post_init__(self):
+        if self.config_overrides is not None and (self.config_name is not None or self.model_name_or_path is not None):
+            raise ValueError(
+                "--config_overrides can't be used in combination with --config_name or --model_name_or_path"
+            )
+
+
+@dataclass
+class DataTrainingArguments:
+    """
+    Arguments pertaining to what data we are going to input our model for training and eval.
+    """
+
+    dataset_name: Optional[str] = field(
+        default=None, metadata={"help": "The name of the dataset to use (via the datasets library)."}
+    )
+    dataset_config_name: Optional[str] = field(
+        default=None, metadata={"help": "The configuration name of the dataset to use (via the datasets library)."}
+    )
+    train_file: Optional[str] = field(default=None, metadata={"help": "The input training data file (a text file)."})
+    validation_file: Optional[str] = field(
+        default=None,
+        metadata={"help": "An optional input evaluation data file to evaluate the perplexity on (a text file)."},
+    )
+    max_train_samples: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": (
+                "For debugging purposes or quicker training, truncate the number of training examples to this "
+                "value if set."
+            )
+        },
+    )
+    max_eval_samples: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": (
+                "For debugging purposes or quicker training, truncate the number of evaluation examples to this "
+                "value if set."
+            )
+        },
+    )
+    streaming: bool = field(default=False, metadata={"help": "Enable streaming mode"})
+    block_size: Optional[int] = field(
+        default=None,
+        metadata={
+            "help": (
+                "Optional input sequence length after tokenization. "
+                "The training dataset will be truncated in block of this size for training. "
+                "Default to the model max input length for single sentence inputs (take into account special tokens)."
+            )
+        },
+    )
+    overwrite_cache: bool = field(
+        default=False, metadata={"help": "Overwrite the cached training and evaluation sets"}
+    )
+    validation_split_percentage: Optional[int] = field(
+        default=5,
+        metadata={
+            "help": "The percentage of the train set used as validation set in case there's no validation split"
+        },
+    )
+    preprocessing_num_workers: Optional[int] = field(
+        default=None,
+        metadata={"help": "The number of processes to use for the preprocessing."},
+    )
+    keep_linebreaks: bool = field(
+        default=True, metadata={"help": "Whether to keep line breaks when using TXT files or not."}
+    )
+
+    def __post_init__(self):
+        if self.streaming:
+            require_version("datasets>=2.0.0", "The streaming feature requires `datasets>=2.0.0`")
+
+        if self.dataset_name is None and self.train_file is None and self.validation_file is None:
+            raise ValueError("Need either a dataset name or a training/validation file.")
+        else:
+            if self.train_file is not None:
+                extension = self.train_file.split(".")[-1]
+                assert extension in ["csv", "json", "txt"], "`train_file` should be a csv, a json or a txt file."
+            if self.validation_file is not None:
+                extension = self.validation_file.split(".")[-1]
+                assert extension in ["csv", "json", "txt"], "`validation_file` should be a csv, a json or a txt file."
+
+
+def main():
+    # See all possible arguments in src/transformers/training_args.py
+    # or by passing the --help flag to this script.
+    # We now keep distinct sets of args, for a cleaner separation of concerns.
+
+    parser = HfArgumentParser((ModelArguments, DataTrainingArguments, TrainingArguments))
+    if len(sys.argv) == 2 and sys.argv[1].endswith(".json"):
+        # If we pass only one argument to the script and it's the path to a json file,
+        # let's parse it to get our arguments.
+        model_args, data_args, training_args = parser.parse_json_file(json_file=os.path.abspath(sys.argv[1]))
+    else:
+        model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+
+    # Sending telemetry. Tracking the example usage helps us better allocate resources to maintain them. The
+    # information sent is the one passed as arguments along with your Python/PyTorch versions.
+    send_example_telemetry("run_clm", model_args, data_args)
+
+    # Setup logging
+    logging.basicConfig(
+        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+        datefmt="%m/%d/%Y %H:%M:%S",
+        handlers=[logging.StreamHandler(sys.stdout)],
+    )
+
+    if training_args.should_log:
+        # The default of training_args.log_level is passive, so we set log level at info here to have that default.
+        transformers.utils.logging.set_verbosity_info()
+
+    log_level = training_args.get_process_log_level()
+    logger.setLevel(log_level)
+    datasets.utils.logging.set_verbosity(log_level)
+    transformers.utils.logging.set_verbosity(log_level)
+    transformers.utils.logging.enable_default_handler()
+    transformers.utils.logging.enable_explicit_format()
+
+    # Log on each process the small summary:
+    logger.warning(
+        f"Process rank: {training_args.local_rank}, device: {training_args.device}, n_gpu: {training_args.n_gpu}"
+        + f"distributed training: {bool(training_args.local_rank != -1)}, 16-bits training: {training_args.fp16}"
+    )
+    logger.info(f"Training/evaluation parameters {training_args}")
+
+    # Detecting last checkpoint.
+    last_checkpoint = None
+    if os.path.isdir(training_args.output_dir) and training_args.do_train and not training_args.overwrite_output_dir:
+        last_checkpoint = get_last_checkpoint(training_args.output_dir)
+        if last_checkpoint is None and len(os.listdir(training_args.output_dir)) > 0:
+            raise ValueError(
+                f"Output directory ({training_args.output_dir}) already exists and is not empty. "
+                "Use --overwrite_output_dir to overcome."
+            )
+        elif last_checkpoint is not None and training_args.resume_from_checkpoint is None:
+            logger.info(
+                f"Checkpoint detected, resuming training at {last_checkpoint}. To avoid this behavior, change "
+                "the `--output_dir` or add `--overwrite_output_dir` to train from scratch."
+            )
+
+    # Set seed before initializing model.
+    set_seed(training_args.seed)
+
+    # Get the datasets: you can either provide your own CSV/JSON/TXT training and evaluation files (see below)
+    # or just provide the name of one of the public datasets available on the hub at https://huggingface.co/datasets/
+    # (the dataset will be downloaded automatically from the datasets Hub).
+    #
+    # For CSV/JSON files, this script will use the column called 'text' or the first column if no column called
+    # 'text' is found. You can easily tweak this behavior (see below).
+    #
+    # In distributed training, the load_dataset function guarantee that only one local process can concurrently
+    # download the dataset.
+    if data_args.dataset_name is not None:
+        if 'mattymchen/refinedweb-3m' == data_args.dataset_name:
+            raw_datasets = load_from_disk('data/refineweb_3m')['train'].train_test_split(train_size=0.01, test_size=0.005)
+        else:
+            # Downloading and loading a dataset from the hub.
+            raw_datasets = load_dataset(
+                data_args.dataset_name,
+                data_args.dataset_config_name,
+                cache_dir=model_args.cache_dir,
+                use_auth_token=True if model_args.use_auth_token else None,
+                streaming=data_args.streaming,
+            )
+            if "validation" not in raw_datasets.keys():
+                raw_datasets["validation"] = load_dataset(
+                    data_args.dataset_name,
+                    data_args.dataset_config_name,
+                    split=f"train[:{data_args.validation_split_percentage}%]",
+                    cache_dir=model_args.cache_dir,
+                    use_auth_token=True if model_args.use_auth_token else None,
+                    streaming=data_args.streaming,
+                )
+                raw_datasets["train"] = load_dataset(
+                    data_args.dataset_name,
+                    data_args.dataset_config_name,
+                    split=f"train[{data_args.validation_split_percentage}%:]",
+                    cache_dir=model_args.cache_dir,
+                    use_auth_token=True if model_args.use_auth_token else None,
+                    streaming=data_args.streaming,
+                )
+    else:
+        data_files = {}
+        dataset_args = {}
+        if data_args.train_file is not None:
+            data_files["train"] = data_args.train_file
+        if data_args.validation_file is not None:
+            data_files["validation"] = data_args.validation_file
+        extension = (
+            data_args.train_file.split(".")[-1]
+            if data_args.train_file is not None
+            else data_args.validation_file.split(".")[-1]
+        )
+        if extension == "txt":
+            extension = "text"
+            dataset_args["keep_linebreaks"] = data_args.keep_linebreaks
+        raw_datasets = load_dataset(
+            extension,
+            data_files=data_files,
+            cache_dir=model_args.cache_dir,
+            use_auth_token=True if model_args.use_auth_token else None,
+            **dataset_args,
+        )
+        # If no validation data is there, validation_split_percentage will be used to divide the dataset.
+        if "validation" not in raw_datasets.keys():
+            raw_datasets["validation"] = load_dataset(
+                extension,
+                data_files=data_files,
+                split=f"train[:{data_args.validation_split_percentage}%]",
+                cache_dir=model_args.cache_dir,
+                use_auth_token=True if model_args.use_auth_token else None,
+                **dataset_args,
+            )
+            raw_datasets["train"] = load_dataset(
+                extension,
+                data_files=data_files,
+                split=f"train[{data_args.validation_split_percentage}%:]",
+                cache_dir=model_args.cache_dir,
+                use_auth_token=True if model_args.use_auth_token else None,
+                **dataset_args,
+            )
+
+    # See more about loading any type of standard or custom dataset (from files, python dict, pandas DataFrame, etc) at
+    # https://huggingface.co/docs/datasets/loading_datasets.html.
+
+    # Load pretrained model and tokenizer
+    #
+    # Distributed training:
+    # The .from_pretrained methods guarantee that only one local process can concurrently
+    # download model & vocab.
+
+    config_kwargs = {
+        "cache_dir": model_args.cache_dir,
+        "revision": model_args.model_revision,
+        "use_auth_token": True if model_args.use_auth_token else None,
+    }
+    if model_args.config_name:
+        config = AutoConfig.from_pretrained(model_args.config_name, **config_kwargs)
+    elif model_args.model_name_or_path:
+        config = AutoConfig.from_pretrained(model_args.model_name_or_path, **config_kwargs)
+    else:
+        config = CONFIG_MAPPING[model_args.model_type]()
+        logger.warning("You are instantiating a new config instance from scratch.")
+        if model_args.config_overrides is not None:
+            logger.info(f"Overriding config: {model_args.config_overrides}")
+            config.update_from_string(model_args.config_overrides)
+            logger.info(f"New config: {config}")
+
+    tokenizer_kwargs = {
+        "cache_dir": model_args.cache_dir,
+        "use_fast": model_args.use_fast_tokenizer,
+        "revision": model_args.model_revision,
+        "use_auth_token": True if model_args.use_auth_token else None,
+    }
+    if model_args.tokenizer_name:
+        tokenizer = AutoTokenizer.from_pretrained(model_args.tokenizer_name, **tokenizer_kwargs)
+    elif model_args.model_name_or_path:
+        tokenizer = AutoTokenizer.from_pretrained(model_args.model_name_or_path, **tokenizer_kwargs)
+    else:
+        raise ValueError(
+            "You are instantiating a new tokenizer from scratch. This is not supported by this script."
+            "You can do it from another script, save it, and load it from here, using --tokenizer_name."
+        )
+
+    if model_args.model_name_or_path:
+        logger.info(f"llama attn replaced with flash attn")
+        tokenizer.pad_token_id = 0
+        tokenizer.padding_side = "left"
+        if model_args.mode == 'mle':
+            MODEL_CLASS = AutoModelForCausalLM
+        elif model_args.mode == 'emo':
+            MODEL_CLASS = EMOLlamaForCausalLM
+        elif model_args.mode == 'emo2':
+            MODEL_CLASS = EMOLlama2ForCausalLM
+        # replace llama attention with Flash Attention
+        from llama_flash_attn_monkey_patch import replace_llama_attn_with_flash_attn
+        replace_llama_attn_with_flash_attn()
+        model = MODEL_CLASS.from_pretrained(
+            model_args.model_name_or_path,
+        )
+        cost_embedding = copy.deepcopy(model.lm_head.weight.data)
+        model.register_buffer("cost_embedding", cost_embedding)
+        print(f'cost embedding registered, shape: {model.cost_embedding.shape}')
+
+        logger.info(f"Using model class: {MODEL_CLASS}")
+        model.config.mixing_ratio = model_args.mixing_ratio
+        model.config.reduction = 'mean'
+        logger.info(f"Mixing ratio: {model.config.mixing_ratio}")
+        logger.info(f"Model class: {model.__class__}")
+    else:
+        model = AutoModelForCausalLM.from_config(config)
+        n_params = sum({p.data_ptr(): p.numel() for p in model.parameters()}.values())
+        logger.info(f"Training new model from scratch - Total size={n_params/2**20:.2f}M params")
+
+    # We resize the embeddings only when necessary to avoid index errors. If you are creating a model from scratch
+    # on a small vocab and want a smaller embedding size, remove this test.
+    embedding_size = model.get_input_embeddings().weight.shape[0]
+    if len(tokenizer) > embedding_size:
+        model.resize_token_embeddings(len(tokenizer))
+
+    # Preprocessing the datasets.
+    # First we tokenize all the texts.
+    if training_args.do_train:
+        column_names = list(raw_datasets["train"].features)
+    else:
+        column_names = list(raw_datasets["validation"].features)
+    text_column_name = "text" if "text" in column_names else column_names[0]
+
+    # since this will be pickled to avoid _LazyModule error in Hasher force logger loading before tokenize_function
+    tok_logger = transformers.utils.logging.get_logger("transformers.tokenization_utils_base")
+
+    def tokenize_function(examples):
+        with CaptureLogger(tok_logger) as cl:
+            output = tokenizer(examples[text_column_name])
+        # clm input could be much much longer than block_size
+        if "Token indices sequence length is longer than the" in cl.out:
+            tok_logger.warning(
+                "^^^^^^^^^^^^^^^^ Please ignore the warning above - this long input will be chunked into smaller bits"
+                " before being passed to the model."
+            )
+        return output
+
+    with training_args.main_process_first(desc="dataset map tokenization"):
+        if not data_args.streaming:
+            tokenized_datasets = raw_datasets.map(
+                tokenize_function,
+                batched=True,
+                num_proc=data_args.preprocessing_num_workers,
+                remove_columns=column_names,
+                load_from_cache_file=not data_args.overwrite_cache,
+                desc="Running tokenizer on dataset",
+            )
+        else:
+            tokenized_datasets = raw_datasets.map(
+                tokenize_function,
+                batched=True,
+                remove_columns=column_names,
+            )
+
+    if data_args.block_size is None:
+        block_size = tokenizer.model_max_length
+        if block_size > 1024:
+            logger.warning(
+                "The chosen tokenizer supports a `model_max_length` that is longer than the default `block_size` value"
+                " of 1024. If you would like to use a longer `block_size` up to `tokenizer.model_max_length` you can"
+                " override this default with `--block_size xxx`."
+            )
+            block_size = 1024
+    else:
+        if data_args.block_size > tokenizer.model_max_length:
+            logger.warning(
+                f"The block_size passed ({data_args.block_size}) is larger than the maximum length for the model"
+                f"({tokenizer.model_max_length}). Using block_size={tokenizer.model_max_length}."
+            )
+        block_size = min(data_args.block_size, tokenizer.model_max_length)
+
+    # Main data processing function that will concatenate all texts from our dataset and generate chunks of block_size.
+    def group_texts(examples):
+        # Concatenate all texts.
+        concatenated_examples = {k: list(chain(*examples[k])) for k in examples.keys()}
+        total_length = len(concatenated_examples[list(examples.keys())[0]])
+        # We drop the small remainder, and if the total_length < block_size  we exclude this batch and return an empty dict.
+        # We could add padding if the model supported it instead of this drop, you can customize this part to your needs.
+        total_length = (total_length // block_size) * block_size
+        # Split by chunks of max_len.
+        result = {
+            k: [t[i : i + block_size] for i in range(0, total_length, block_size)]
+            for k, t in concatenated_examples.items()
+        }
+        result["labels"] = result["input_ids"].copy()
+        return result
+
+    # Note that with `batched=True`, this map processes 1,000 texts together, so group_texts throws away a remainder
+    # for each of those groups of 1,000 texts. You can adjust that batch_size here but a higher value might be slower
+    # to preprocess.
+    #
+    # To speed up this part, we use multiprocessing. See the documentation of the map method for more information:
+    # https://huggingface.co/docs/datasets/package_reference/main_classes.html#datasets.Dataset.map
+
+    with training_args.main_process_first(desc="grouping texts together"):
+        if not data_args.streaming:
+            lm_datasets = tokenized_datasets.map(
+                group_texts,
+                batched=True,
+                num_proc=data_args.preprocessing_num_workers,
+                load_from_cache_file=not data_args.overwrite_cache,
+                desc=f"Grouping texts in chunks of {block_size}",
+            )
+        else:
+            lm_datasets = tokenized_datasets.map(
+                group_texts,
+                batched=True,
+            )
+
+    if training_args.do_train:
+        if "train" not in tokenized_datasets:
+            raise ValueError("--do_train requires a train dataset")
+        train_dataset = lm_datasets["train"]
+        if data_args.max_train_samples is not None:
+            max_train_samples = min(len(train_dataset), data_args.max_train_samples)
+            train_dataset = train_dataset.select(range(max_train_samples))
+
+    if training_args.do_eval:
+        if "validation" not in tokenized_datasets:
+            raise ValueError("--do_eval requires a validation dataset")
+        eval_dataset = lm_datasets["validation"]
+        if data_args.max_eval_samples is not None:
+            max_eval_samples = min(len(eval_dataset), data_args.max_eval_samples)
+            eval_dataset = eval_dataset.select(range(max_eval_samples))
+
+        def preprocess_logits_for_metrics(logits, labels):
+            if isinstance(logits, tuple):
+                # Depending on the model and config, logits may contain extra tensors,
+                # like past_key_values, but logits always come first
+                logits = logits[0]
+            return logits.argmax(dim=-1)
+
+        metric = evaluate.load("accuracy")
+
+        def compute_metrics(eval_preds):
+            preds, labels = eval_preds
+            # preds have the same shape as the labels, after the argmax(-1) has been calculated
+            # by preprocess_logits_for_metrics but we need to shift the labels
+            labels = labels[:, 1:].reshape(-1)
+            preds = preds[:, :-1].reshape(-1)
+            return metric.compute(predictions=preds, references=labels)
+
+    # Initialize our Trainer
+    training_args.save_strategy = "no"
+    trainer = Trainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_dataset if training_args.do_train else None,
+        eval_dataset=eval_dataset if training_args.do_eval else None,
+        tokenizer=tokenizer,
+        # Data collator will default to DataCollatorWithPadding, so we change it.
+        data_collator=default_data_collator,
+        compute_metrics=compute_metrics if training_args.do_eval and not is_torch_tpu_available() else None,
+        preprocess_logits_for_metrics=preprocess_logits_for_metrics
+        if training_args.do_eval and not is_torch_tpu_available()
+        else None,
+    )
+
+    # Training
+    if training_args.do_train:
+        checkpoint = None
+        if training_args.resume_from_checkpoint is not None:
+            checkpoint = training_args.resume_from_checkpoint
+        elif last_checkpoint is not None:
+            checkpoint = last_checkpoint
+        train_result = trainer.train(resume_from_checkpoint=checkpoint)
+        trainer.save_model()  # Saves the tokenizer too for easy upload
+
+        metrics = train_result.metrics
+
+        max_train_samples = (
+            data_args.max_train_samples if data_args.max_train_samples is not None else len(train_dataset)
+        )
+        metrics["train_samples"] = min(max_train_samples, len(train_dataset))
+
+        trainer.log_metrics("train", metrics)
+        trainer.save_metrics("train", metrics)
+        trainer.save_state()
+
+    # Evaluation
+    if training_args.do_eval:
+        logger.info("*** Evaluate ***")
+
+        metrics = trainer.evaluate()
+
+        max_eval_samples = data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset)
+        metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
+        try:
+            perplexity = math.exp(metrics["eval_loss"])
+        except OverflowError:
+            perplexity = float("inf")
+        metrics["perplexity"] = perplexity
+
+        trainer.log_metrics("eval", metrics)
+        trainer.save_metrics("eval", metrics)
+
+    kwargs = {"finetuned_from": model_args.model_name_or_path, "tasks": "text-generation"}
+    if data_args.dataset_name is not None:
+        kwargs["dataset_tags"] = data_args.dataset_name
+        if data_args.dataset_config_name is not None:
+            kwargs["dataset_args"] = data_args.dataset_config_name
+            kwargs["dataset"] = f"{data_args.dataset_name} {data_args.dataset_config_name}"
+        else:
+            kwargs["dataset"] = data_args.dataset_name
+
+    if training_args.push_to_hub:
+        trainer.push_to_hub(**kwargs)
+    else:
+        trainer.create_model_card(**kwargs)
+
+
+def _mp_fn(index):
+    # For xla_spawn (TPUs)
+    main()
+
+
+if __name__ == "__main__":
+    main()
+File Path: emo_patch.py
+Content:
+from typing import List, Optional, Tuple
+
+import torch
+from torch import nn
+
+import transformers
+from transformers.models.llama.modeling_llama import CausalLMOutputWithPast
+
+def emo1_adaptive(
+    self,
+    input_ids: torch.LongTensor = None,
+    attention_mask: Optional[torch.Tensor] = None,
+    position_ids: Optional[torch.LongTensor] = None,
+    past_key_values: Optional[List[torch.FloatTensor]] = None,
+    inputs_embeds: Optional[torch.FloatTensor] = None,
+    labels: Optional[torch.LongTensor] = None,
+    use_cache: Optional[bool] = None,
+    output_attentions: Optional[bool] = None,
+    output_hidden_states: Optional[bool] = None,
+    return_dict: Optional[bool] = None,
+):
+    """
+    forward function of EMO
+    """
+
+    output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+    output_hidden_states = (
+        output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+    )
+    return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+    outputs = self.model(
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        position_ids=position_ids,
+        past_key_values=past_key_values,
+        inputs_embeds=inputs_embeds,
+        use_cache=use_cache,
+        output_attentions=output_attentions,
+        output_hidden_states=output_hidden_states,
+        return_dict=return_dict,
+    )
+
+    # ======================================================================== #
+    #                   Compute the MLE loss
+    # ======================================================================== #
+    hidden_states = outputs[0]
+    logits = self.lm_head(hidden_states)
+    mask = labels[:, 1:].contiguous().view(-1)
+    mask = (mask!=-100).to(logits.dtype)
+    loss_fct = torch.nn.CrossEntropyLoss(reduction='none')
+    logits = logits[:, :-1, :].contiguous().view(-1, logits.shape[-1])
+    labels = labels[:, 1:].contiguous().view(-1)
+    mle_loss = loss_fct(logits, labels)
+
+    # ======================================================================== #
+    #                   Compute the EMO loss
+    # ======================================================================== #
+    labels_tmp = labels.clone()
+    labels_tmp[labels_tmp==(-100)] = 0
+    one_hot = torch.nn.functional.one_hot(labels_tmp, num_classes=self.config.vocab_size).to(logits.dtype)
+    stable_onehot = (one_hot+1e-15) / torch.linalg.vector_norm((one_hot+1e-15), ord=1, dim=-1, keepdim=True) # (bsz*seq_len, vocab_size)
+    embedding_matrix = self.lm_head.weight.data.detach() # (vocab_size, hidden_size)
+    embedding_matrix = embedding_matrix / torch.linalg.vector_norm(embedding_matrix, ord=2, dim=1, keepdim=True)
+    p_contextual_repr = stable_onehot @ embedding_matrix # (bsz*seq_len, hidden_size)
+    q_grad = torch.log_softmax(logits, dim=-1).exp() # (bsz*seq_len, vocab_size)
+    gt_q = (q_grad * one_hot).detach()
+    q_final = q_grad - gt_q
+    q_contextual_repr = q_final @ embedding_matrix # (bsz*seq_len, hidden_size)
+    emo_loss = (1 - torch.sum(p_contextual_repr*q_contextual_repr, dim=-1)) # (bsz*seq_len,)
+    emo_loss = emo_loss * mask
+
+    # ======================================================================== #
+    #                   Compose the final loss
+    # ======================================================================== #
+    loss = ((mle_loss / (emo_loss+1e-10)).detach()  * emo_loss + mle_loss) * 0.5
+    loss = (loss * mask).sum() / (1e-15 + mask.sum())
+
+    if not return_dict:
+        output = (logits,) + outputs[1:]
+        return (loss,) + output if loss is not None else output
+    
+    return CausalLMOutputWithPast(
+            loss=loss,
+            logits=logits,
+            past_key_values=outputs.past_key_values,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
+        )
+
+def emo2_adaptive(
+    self,
+    input_ids: torch.LongTensor = None,
+    attention_mask: Optional[torch.Tensor] = None,
+    position_ids: Optional[torch.LongTensor] = None,
+    past_key_values: Optional[List[torch.FloatTensor]] = None,
+    inputs_embeds: Optional[torch.FloatTensor] = None,
+    labels: Optional[torch.LongTensor] = None,
+    use_cache: Optional[bool] = None,
+    output_attentions: Optional[bool] = None,
+    output_hidden_states: Optional[bool] = None,
+    return_dict: Optional[bool] = None,
+):
+    """
+    forward function of EMO
+    """
+
+    output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+    output_hidden_states = (
+        output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+    )
+    return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+    outputs = self.model(
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        position_ids=position_ids,
+        past_key_values=past_key_values,
+        inputs_embeds=inputs_embeds,
+        use_cache=use_cache,
+        output_attentions=output_attentions,
+        output_hidden_states=output_hidden_states,
+        return_dict=return_dict,
+    )
+
+    # ======================================================================== #
+    #                   Compute the MLE loss
+    # ======================================================================== #
+    hidden_states = outputs[0]
+    logits = self.lm_head(hidden_states)
+    mask = labels[:, 1:].contiguous().view(-1)
+    mask = (mask!=-100).to(logits.dtype)
+    loss_fct = torch.nn.CrossEntropyLoss(reduction='none')
+    logits = logits[:, :-1, :].contiguous().view(-1, logits.shape[-1])
+    labels = labels[:, 1:].contiguous().view(-1)
+    mle_loss = loss_fct(logits, labels)
+
+    # ======================================================================== #
+    #                   Compute the EMO loss
+    # ======================================================================== #
+    labels_tmp = labels.clone()
+    labels_tmp[labels_tmp==(-100)] = 0
+    one_hot = torch.nn.functional.one_hot(labels_tmp, num_classes=self.config.vocab_size).to(logits.dtype)
+    stable_onehot = (one_hot+1e-15) / torch.linalg.vector_norm((one_hot+1e-15), ord=1, dim=-1, keepdim=True) # (bsz*seq_len, vocab_size)
+    embedding_matrix = self.lm_head.weight.data.detach() # (vocab_size, hidden_size)
+    embedding_matrix = embedding_matrix / torch.linalg.vector_norm(embedding_matrix, ord=2, dim=1, keepdim=True)
+    p_contextual_repr = stable_onehot @ embedding_matrix # (bsz*seq_len, hidden_size)
+    q_grad = torch.log_softmax(logits, dim=-1).exp() # (bsz*seq_len, vocab_size)
+    gt_q = (q_grad * one_hot).detach()
+    q_final = q_grad - gt_q
+    q_contextual_repr = q_final @ embedding_matrix # (bsz*seq_len, hidden_size)
+    emo_loss = (1 - torch.sum(p_contextual_repr*q_contextual_repr, dim=-1)) # (bsz*seq_len,)
+    emo_loss = emo_loss * mask
+
+    # ======================================================================== #
+    #                   Compose the final loss
+    # ======================================================================== #
+    loss = (emo_loss / (mle_loss+1e-10)).detach() * mle_loss + emo_loss
+    loss = (loss * mask).sum() / (1e-15 + mask.sum())
+
+    if not return_dict:
+        output = (logits,) + outputs[1:]
+        return (loss,) + output if loss is not None else output
+    
+    return CausalLMOutputWithPast(
+            loss=loss,
+            logits=logits,
+            past_key_values=outputs.past_key_values,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
+        )
+
+def emo2_fixed(
+    self,
+    input_ids: torch.LongTensor = None,
+    attention_mask: Optional[torch.Tensor] = None,
+    position_ids: Optional[torch.LongTensor] = None,
+    past_key_values: Optional[List[torch.FloatTensor]] = None,
+    inputs_embeds: Optional[torch.FloatTensor] = None,
+    labels: Optional[torch.LongTensor] = None,
+    use_cache: Optional[bool] = None,
+    output_attentions: Optional[bool] = None,
+    output_hidden_states: Optional[bool] = None,
+    return_dict: Optional[bool] = None,
+):
+    """
+    forward function of EMO
+    """
+
+    output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+    output_hidden_states = (
+        output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+    )
+    return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+    outputs = self.model(
+        input_ids=input_ids,
+        attention_mask=attention_mask,
+        position_ids=position_ids,
+        past_key_values=past_key_values,
+        inputs_embeds=inputs_embeds,
+        use_cache=use_cache,
+        output_attentions=output_attentions,
+        output_hidden_states=output_hidden_states,
+        return_dict=return_dict,
+    )
+
+    # ======================================================================== #
+    #                   Compute the MLE loss
+    # ======================================================================== #
+    hidden_states = outputs[0]
+    logits = self.lm_head(hidden_states)
+    mask = labels[:, 1:].contiguous().view(-1)
+    mask = (mask!=-100).to(logits.dtype)
+    loss_fct = torch.nn.CrossEntropyLoss(reduction='none')
+    logits = logits[:, :-1, :].contiguous().view(-1, logits.shape[-1])
+    labels = labels[:, 1:].contiguous().view(-1)
+    mle_loss = loss_fct(logits, labels)
+
+    # ======================================================================== #
+    #                   Compute the EMO loss
+    # ======================================================================== #
+    labels_tmp = labels.clone()
+    labels_tmp[labels_tmp==(-100)] = 0
+    one_hot = torch.nn.functional.one_hot(labels_tmp, num_classes=self.config.vocab_size).to(logits.dtype)
+    stable_onehot = (one_hot+1e-15) / torch.linalg.vector_norm((one_hot+1e-15), ord=1, dim=-1, keepdim=True) # (bsz*seq_len, vocab_size)
+    embedding_matrix = self.cost_embedding # (vocab_size, hidden_size)
+    embedding_matrix = embedding_matrix / torch.linalg.vector_norm(embedding_matrix, ord=2, dim=1, keepdim=True)
+    p_contextual_repr = stable_onehot @ embedding_matrix # (bsz*seq_len, hidden_size)
+    q_grad = torch.log_softmax(logits, dim=-1).exp() # (bsz*seq_len, vocab_size)
+    gt_q = (q_grad * one_hot).detach()
+    q_final = q_grad - gt_q
+    q_contextual_repr = q_final @ embedding_matrix # (bsz*seq_len, hidden_size)
+    emo_loss = (1 - torch.sum(p_contextual_repr*q_contextual_repr, dim=-1)) # (bsz*seq_len,)
+
+    # ======================================================================== #
+    #                   Compose the final loss
+    # ======================================================================== #
+    loss = (emo_loss / (mle_loss+1e-10)).detach() * mle_loss + emo_loss
+    loss = (loss * mask).sum() / (1e-15 + mask.sum())
+
+    if not return_dict:
+        output = (logits,) + outputs[1:]
+        return (loss,) + output if loss is not None else output
+    
+    return CausalLMOutputWithPast(
+            loss=loss,
+            logits=logits,
+            past_key_values=outputs.past_key_values,
+            hidden_states=outputs.hidden_states,
+            attentions=outputs.attentions,
+        )
+
+def replace_llama_forward_with_emo_1_adaptive_forward():
+    transformers.models.llama.modeling_llama.LlamaForCausalLM.forward = emo1_adaptive
+
+def replace_llama_forward_with_emo_2_adaptive_forward():
+    transformers.models.llama.modeling_llama.LlamaForCausalLM.forward = emo2_adaptive
+
+def replace_llama_forward_with_emo_2_fixed_forward():
+    transformers.models.llama.modeling_llama.LlamaForCausalLM.forward = emo2_fixed
+File Path: instruction_tuning/emo_llama.py
+Content:
+import torch
+from transformers import LlamaForCausalLM
+from typing import Optional, List
+from torch.nn import CrossEntropyLoss
+from transformers import LlamaModel
+
+
+class EMOLlamaForCausalLM(LlamaForCausalLM):
+    def __init__(self, config):
+        super().__init__(config)
+        self.model = LlamaModel(config)
+
+        self.lm_head = torch.nn.Linear(config.hidden_size, config.vocab_size, bias=False)
+
+        # Initialize weights and apply final processing
+        self.post_init()
+
+    def forward(
+        self,
+        input_ids: torch.LongTensor = None,
+        attention_mask: Optional[torch.Tensor] = None,
+        position_ids: Optional[torch.LongTensor] = None,
+        past_key_values: Optional[List[torch.FloatTensor]] = None,
+        inputs_embeds: Optional[torch.FloatTensor] = None,
+        labels: Optional[torch.LongTensor] = None,
+        use_cache: Optional[bool] = None,
+        output_attentions: Optional[bool] = None,
+        output_hidden_states: Optional[bool] = None,
+        return_dict: Optional[bool] = None,
+    ):
+
+        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+        output_hidden_states = (
+            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+        )
+        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+        outputs = self.model(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            position_ids=position_ids,
+            past_key_values=past_key_values,
+            inputs_embeds=inputs_embeds,
+            use_cache=use_cache,
+            output_attentions=output_attentions,
+            output_hidden_states=output_hidden_states,
+            return_dict=return_dict,
+        )
+
+        # ======================================================================== #
+        #                   Compute the MLE loss
+        # ======================================================================== #
+        hidden_states = outputs[0]
+        logits = self.lm_head(hidden_states)
+        mask = labels[:, 1:].contiguous().view(-1)
+        mask = (mask!=-100).to(logits.dtype)
+        loss_fct = torch.nn.CrossEntropyLoss(reduction='none')
+        logits = logits[:, :-1, :].contiguous().view(-1, logits.shape[-1])
+        labels = labels[:, 1:].contiguous().view(-1)
+        mle_loss = loss_fct(logits, labels)
+
+        # ======================================================================== #
+        #                   Compute the EMO loss
+        # ======================================================================== #
+        labels_tmp = labels.clone()
+        labels_tmp[labels_tmp==(-100)] = 0
+        one_hot = torch.nn.functional.one_hot(labels_tmp, num_classes=self.config.vocab_size).to(logits.dtype)
+        stable_onehot = (one_hot+1e-15) / torch.linalg.vector_norm((one_hot+1e-15), ord=1, dim=-1, keepdim=True) # (bsz*seq_len, vocab_size)
+        embedding_matrix = self.cost_embedding # (vocab_size, hidden_size)
+        embedding_matrix = embedding_matrix / torch.linalg.vector_norm(embedding_matrix, ord=2, dim=1, keepdim=True)
+        p_contextual_repr = stable_onehot @ embedding_matrix # (bsz*seq_len, hidden_size)
+        q_grad = torch.log_softmax(logits, dim=-1).exp() # (bsz*seq_len, vocab_size)
+        gt_q = (q_grad * one_hot).detach()
+        q_final = q_grad - gt_q
+        q_contextual_repr = q_final @ embedding_matrix # (bsz*seq_len, hidden_size)
+        emo_loss = (1 - torch.sum(p_contextual_repr*q_contextual_repr, dim=-1)) # (bsz*seq_len,)
+        emo_loss = emo_loss * mask
+
+        # ======================================================================== #
+        #                   Compose the final loss
+        # ======================================================================== #
+        loss = ((mle_loss / (emo_loss+1e-10)).detach()  * emo_loss + mle_loss) * 0.5
+        loss = (loss * mask).sum() / (1e-15 + mask.sum())
+
+        output = (logits,) + outputs[1:]
+        return (loss,) + output if loss is not None else output
+
+File Path: instruction_tuning/flash_attention_patch.py
+Content:
+from typing import List, Optional, Tuple
+
+import torch
+from torch import nn
+
+import transformers
+from transformers.models.llama.modeling_llama import apply_rotary_pos_emb
+
+from einops import rearrange
+
+try:
+    from flash_attn.flash_attn_interface import flash_attn_varlen_qkvpacked_func as flash_attn_unpadded_qkvpacked_func
+except ImportError:
+    from flash_attn.flash_attn_interface import flash_attn_unpadded_qkvpacked_func
+    
+from flash_attn.bert_padding import unpad_input, pad_input
+
+# opt1.3b
+# se_emd 0.58
+
+# opt2.7b
+# se_emd 0.85
+
+
+def forward(
+    self,
+    hidden_states: torch.Tensor,
+    attention_mask: Optional[torch.Tensor] = None,
+    position_ids: Optional[torch.Tensor] = None,
+    past_key_value: Optional[Tuple[torch.Tensor]] = None,
+    output_attentions: bool = False,
+    use_cache: bool = False,
+    **kwargs
+) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
+    """Input shape: Batch x Time x Channel
+
+    attention_mask: [bsz, q_len]
+    """
+    use_cache = False
+    bsz, q_len, _ = hidden_states.size()
+
+    query_states = (
+        self.q_proj(hidden_states)
+        .view(bsz, q_len, self.num_heads, self.head_dim)
+        .transpose(1, 2)
+    )
+    key_states = (
+        self.k_proj(hidden_states)
+        .view(bsz, q_len, self.num_heads, self.head_dim)
+        .transpose(1, 2)
+    )
+    value_states = (
+        self.v_proj(hidden_states)
+        .view(bsz, q_len, self.num_heads, self.head_dim)
+        .transpose(1, 2)
+    )
+    # [bsz, q_len, nh, hd]
+    # [bsz, nh, q_len, hd]
+
+    kv_seq_len = key_states.shape[-2]
+    assert past_key_value is None, "past_key_value is not supported"
+
+    cos, sin = self.rotary_emb(value_states, seq_len=kv_seq_len)
+    query_states, key_states = apply_rotary_pos_emb(
+        query_states, key_states, cos, sin, position_ids
+    )
+    # [bsz, nh, t, hd]
+    assert not output_attentions, "output_attentions is not supported"
+    assert not use_cache, "use_cache is not supported"
+
+    # Flash attention codes from
+    # https://github.com/HazyResearch/flash-attention/blob/main/flash_attn/flash_attention.py
+
+    # transform the data into the format required by flash attention
+    qkv = torch.stack(
+        [query_states, key_states, value_states], dim=2
+    )  # [bsz, nh, 3, q_len, hd]
+    qkv = qkv.transpose(1, 3)  # [bsz, q_len, 3, nh, hd]
+    # We have disabled _prepare_decoder_attention_mask in LlamaModel
+    # the attention_mask should be the same as the key_padding_mask
+    key_padding_mask = attention_mask
+
+    if key_padding_mask is None:
+        qkv = rearrange(qkv, "b s ... -> (b s) ...")
+        max_s = q_len
+        cu_q_lens = torch.arange(
+            0, (bsz + 1) * q_len, step=q_len, dtype=torch.int32, device=qkv.device
+        )
+        output = flash_attn_unpadded_qkvpacked_func(
+            qkv, cu_q_lens, max_s, 0.0, softmax_scale=None, causal=True
+        )
+        output = rearrange(output, "(b s) ... -> b s ...", b=bsz)
+    else:
+        nheads = qkv.shape[-2]
+        x = rearrange(qkv, "b s three h d -> b s (three h d)")
+        x_unpad, indices, cu_q_lens, max_s = unpad_input(x, key_padding_mask)
+        x_unpad = rearrange(
+            x_unpad, "nnz (three h d) -> nnz three h d", three=3, h=nheads
+        )
+        output_unpad = flash_attn_unpadded_qkvpacked_func(
+            x_unpad, cu_q_lens, max_s, 0.0, softmax_scale=None, causal=True
+        )
+        output = rearrange(
+            pad_input(
+                rearrange(output_unpad, "nnz h d -> nnz (h d)"), indices, bsz, q_len
+            ),
+            "b s (h d) -> b s h d",
+            h=nheads,
+        )
+    return self.o_proj(rearrange(output, "b s h d -> b s (h d)")), None, None
+
+
+# Disable the transformation of the attention mask in LlamaModel as the flash attention
+# requires the attention mask to be the same as the key_padding_mask
+def _prepare_decoder_attention_mask(
+    self, attention_mask, input_shape, inputs_embeds, past_key_values_length
+):
+    # [bsz, seq_len]
+    return attention_mask
+
+
+def replace_llama_attn_with_flash_attn():
+    transformers.models.llama.modeling_llama.LlamaModel._prepare_decoder_attention_mask = (
+        _prepare_decoder_attention_mask
+    )
+    transformers.models.llama.modeling_llama.LlamaAttention.forward = forward
+File Path: instruction_tuning/train.py
+Content:
+#    Copyright 2023 Rohan Taori, Ishaan Gulrajani, Tianyi Zhang, Yann Dubois, Xuechen Li
+#
+#    Licensed under the Apache License, Version 2.0 (the "License");
+#    you may not use this file except in compliance with the License.
+#    You may obtain a copy of the License at
+#
+#        http://www.apache.org/licenses/LICENSE-2.0
+#
+#    Unless required by applicable law or agreed to in writing, software
+#    distributed under the License is distributed on an "AS IS" BASIS,
+#    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+#    See the License for the specific language governing permissions and
+#    limitations under the License.
+
+import copy
+import logging
+from dataclasses import dataclass, field
+from typing import Dict, Optional, Sequence
+
+import torch
+import transformers
+import utils
+from torch.utils.data import Dataset
+from transformers import Trainer
+from emo_llama import EMOLlamaForCausalLM
+
+IGNORE_INDEX = -100
+DEFAULT_PAD_TOKEN = "[PAD]"
+DEFAULT_EOS_TOKEN = "</s>"
+DEFAULT_BOS_TOKEN = "<s>"
+DEFAULT_UNK_TOKEN = "<unk>"
+PROMPT_DICT = {
+    "prompt_input": (
+        "Below is an instruction that describes a task, paired with an input that provides further context. "
+        "Write a response that appropriately completes the request.\n\n"
+        "### Instruction:\n{instruction}\n\n### Input:\n{input}\n\n### Response:"
+    ),
+    "prompt_no_input": (
+        "Below is an instruction that describes a task. "
+        "Write a response that appropriately completes the request.\n\n"
+        "### Instruction:\n{instruction}\n\n### Response:"
+    ),
+}
+
+
+@dataclass
+class ModelArguments:
+    model_name_or_path: Optional[str] = field(default="facebook/opt-125m")
+    mode: Optional[str] = field(default="mle")
+
+
+@dataclass
+class DataArguments:
+    data_path: str = field(default=None, metadata={"help": "Path to the training data."})
+
+
+@dataclass
+class TrainingArguments(transformers.TrainingArguments):
+    cache_dir: Optional[str] = field(default=None)
+    optim: str = field(default="adamw_torch")
+    model_max_length: int = field(
+        default=512,
+        metadata={"help": "Maximum sequence length. Sequences will be right padded (and possibly truncated)."},
+    )
+
+
+def smart_tokenizer_and_embedding_resize(
+    special_tokens_dict: Dict,
+    tokenizer: transformers.PreTrainedTokenizer,
+    model: transformers.PreTrainedModel,
+):
+    """Resize tokenizer and embedding.
+
+    Note: This is the unoptimized version that may make your embedding size not be divisible by 64.
+    """
+    num_new_tokens = tokenizer.add_special_tokens(special_tokens_dict)
+    model.resize_token_embeddings(len(tokenizer))
+
+    if num_new_tokens > 0:
+        input_embeddings = model.get_input_embeddings().weight.data
+        output_embeddings = model.get_output_embeddings().weight.data
+
+        input_embeddings_avg = input_embeddings[:-num_new_tokens].mean(dim=0, keepdim=True)
+        output_embeddings_avg = output_embeddings[:-num_new_tokens].mean(dim=0, keepdim=True)
+
+        input_embeddings[-num_new_tokens:] = input_embeddings_avg
+        output_embeddings[-num_new_tokens:] = output_embeddings_avg
+
+
+def _tokenize_fn(strings: Sequence[str], tokenizer: transformers.PreTrainedTokenizer) -> Dict:
+    """Tokenize a list of strings."""
+    tokenized_list = [
+        tokenizer(
+            text,
+            return_tensors="pt",
+            padding="longest",
+            max_length=tokenizer.model_max_length,
+            truncation=True,
+        )
+        for text in strings
+    ]
+    input_ids = labels = [tokenized.input_ids[0] for tokenized in tokenized_list]
+    input_ids_lens = labels_lens = [
+        tokenized.input_ids.ne(tokenizer.pad_token_id).sum().item() for tokenized in tokenized_list
+    ]
+    return dict(
+        input_ids=input_ids,
+        labels=labels,
+        input_ids_lens=input_ids_lens,
+        labels_lens=labels_lens,
+    )
+
+
+def preprocess(
+    sources: Sequence[str],
+    targets: Sequence[str],
+    tokenizer: transformers.PreTrainedTokenizer,
+) -> Dict:
+    """Preprocess the data by tokenizing."""
+    examples = [s + t for s, t in zip(sources, targets)]
+    examples_tokenized, sources_tokenized = [_tokenize_fn(strings, tokenizer) for strings in (examples, sources)]
+    input_ids = examples_tokenized["input_ids"]
+    labels = copy.deepcopy(input_ids)
+    for label, source_len in zip(labels, sources_tokenized["input_ids_lens"]):
+        label[:source_len] = IGNORE_INDEX
+    return dict(input_ids=input_ids, labels=labels)
+
+
+class SupervisedDataset(Dataset):
+    """Dataset for supervised fine-tuning."""
+
+    def __init__(self, data_path: str, tokenizer: transformers.PreTrainedTokenizer):
+        super(SupervisedDataset, self).__init__()
+        logging.warning("Loading data...")
+        list_data_dict = utils.jload(data_path)
+
+        logging.warning("Formatting inputs...")
+        prompt_input, prompt_no_input = PROMPT_DICT["prompt_input"], PROMPT_DICT["prompt_no_input"]
+        sources = [
+            prompt_input.format_map(example) if example.get("input", "") != "" else prompt_no_input.format_map(example)
+            for example in list_data_dict
+        ]
+        targets = [f"{example['output']}{tokenizer.eos_token}" for example in list_data_dict]
+
+        logging.warning("Tokenizing inputs... This may take some time...")
+        data_dict = preprocess(sources, targets, tokenizer)
+
+        self.input_ids = data_dict["input_ids"]
+        self.labels = data_dict["labels"]
+
+    def __len__(self):
+        return len(self.input_ids)
+
+    def __getitem__(self, i) -> Dict[str, torch.Tensor]:
+        return dict(input_ids=self.input_ids[i], labels=self.labels[i])
+
+
+@dataclass
+class DataCollatorForSupervisedDataset(object):
+    """Collate examples for supervised fine-tuning."""
+
+    tokenizer: transformers.PreTrainedTokenizer
+
+    def __call__(self, instances: Sequence[Dict]) -> Dict[str, torch.Tensor]:
+        input_ids, labels = tuple([instance[key] for instance in instances] for key in ("input_ids", "labels"))
+        input_ids = torch.nn.utils.rnn.pad_sequence(
+            input_ids, batch_first=True, padding_value=self.tokenizer.pad_token_id
+        )
+        labels = torch.nn.utils.rnn.pad_sequence(labels, batch_first=True, padding_value=IGNORE_INDEX)
+        return dict(
+            input_ids=input_ids,
+            labels=labels,
+            attention_mask=input_ids.ne(self.tokenizer.pad_token_id),
+        )
+
+
+def make_supervised_data_module(tokenizer: transformers.PreTrainedTokenizer, data_args) -> Dict:
+    """Make dataset and collator for supervised fine-tuning."""
+    train_dataset = SupervisedDataset(tokenizer=tokenizer, data_path=data_args.data_path)
+    data_collator = DataCollatorForSupervisedDataset(tokenizer=tokenizer)
+    return dict(train_dataset=train_dataset, eval_dataset=None, data_collator=data_collator)
+
+
+def train():
+    parser = transformers.HfArgumentParser((ModelArguments, DataArguments, TrainingArguments))
+    model_args, data_args, training_args = parser.parse_args_into_dataclasses()
+    training_mode = model_args.mode
+    print(f"Training objective: {training_mode}")
+
+    if training_mode == 'mle':
+        model = transformers.AutoModelForCausalLM.from_pretrained(
+            model_args.model_name_or_path,
+            cache_dir=training_args.cache_dir,
+        )
+    elif training_mode == 'emo':
+        model = EMOLlamaForCausalLM.from_pretrained(
+            model_args.model_name_or_path,
+            cache_dir=training_args.cache_dir,
+        )
+    else:
+        raise NotImplementedError
+    print(model.__class__)
+
+    tokenizer = transformers.AutoTokenizer.from_pretrained(
+        model_args.model_name_or_path,
+        cache_dir=training_args.cache_dir,
+        model_max_length=training_args.model_max_length,
+        padding_side="right",
+        use_fast=False,
+    )
+    special_tokens_dict = dict()
+    if tokenizer.pad_token is None:
+        special_tokens_dict["pad_token"] = DEFAULT_PAD_TOKEN
+    if tokenizer.eos_token is None:
+        special_tokens_dict["eos_token"] = DEFAULT_EOS_TOKEN
+    if tokenizer.bos_token is None:
+        special_tokens_dict["bos_token"] = DEFAULT_BOS_TOKEN
+    if tokenizer.unk_token is None:
+        special_tokens_dict["unk_token"] = DEFAULT_UNK_TOKEN
+
+    smart_tokenizer_and_embedding_resize(
+        special_tokens_dict=special_tokens_dict,
+        tokenizer=tokenizer,
+        model=model,
+    )
+    if training_mode != 'mle':
+        # llama13b = transformers.AutoModelForCausalLM.from_pretrained(
+        #     # "/cpfs01/shared/public/public_hdd/llmeval/model_weights/hf_hub/models--huggyllama--llama-13b/snapshots/bf57045473f207bb1de1ed035ace226f4d9f9bba",
+        #     torch_dtype=torch.float16
+        # )
+        # smart_tokenizer_and_embedding_resize(
+        #     special_tokens_dict=special_tokens_dict,
+        #     tokenizer=tokenizer,
+        #     model=llama13b,
+        # )
+        cost_embedding = copy.deepcopy(model.lm_head.weight.data)
+        model.register_buffer("cost_embedding", cost_embedding)
+        # del llama13b
+        print(f'cost embedding registered, shape: {model.cost_embedding.shape}')
+
+    data_module = make_supervised_data_module(tokenizer=tokenizer, data_args=data_args)
+    trainer = Trainer(model=model, tokenizer=tokenizer, args=training_args, **data_module)
+    trainer.train()
+    trainer.save_state()
+    trainer.save_model(output_dir=training_args.output_dir)
+
+
+if __name__ == "__main__":
+    try:
+        from flash_attention_patch import replace_llama_attn_with_flash_attn
+        replace_llama_attn_with_flash_attn()
+        print(f"llama attn replaced with flash attn")
+    except:
+        print(f"Not using flash attention")
+    train()
+
+File Path: language_modeling/gpt2.py
+Content:
+# Copyright 2023 Bloomberg Finance L.P.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+import torch
+from transformers import GPT2LMHeadModel, GPT2PreTrainedModel
+from transformers.utils import add_start_docstrings
+from transformers.utils.model_parallel_utils import assert_device_map, get_device_map
+
+PARALLELIZE_DOCSTRING = r"""
+    This is an experimental feature and is a subject to change at a moment's notice.
+    Uses a device map to distribute attention modules of the model across several devices. If no device map is given,
+    it will evenly distribute blocks across all devices.
+    Args:
+        device_map (`Dict[int, list]`, optional, defaults to None):
+            A dictionary that maps attention modules to devices. Note that the embedding module and LMHead are always
+            automatically mapped to the first device (for esoteric reasons). That means that the first device should
+            have fewer attention modules mapped to it than other devices. For reference, the gpt2 models have the
+            following number of attention modules:
+                - gpt2: 12
+                - gpt2-medium: 24
+                - gpt2-large: 36
+                - gpt2-xl: 48
+    Example:
+    ```python
+    # Here is an example of a device map on a machine with 4 GPUs using gpt2-xl,
+    # which has a total of 48 attention modules:
+    model = GPT2LMHeadModel.from_pretrained("gpt2-xl")
+    device_map = {
+        0: [0, 1, 2, 3, 4, 5, 6, 7, 8],
+        1: [9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21],
+        2: [22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34],
+        3: [35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47],
+    }
+    model.parallelize(device_map)
+    ```
+"""
+DEPARALLELIZE_DOCSTRING = r"""
+    Moves the model to cpu from a model parallel state.
+    Example:
+    ```python
+    # On a 4 GPU machine with gpt2-large:
+    model = GPT2LMHeadModel.from_pretrained("gpt2-large")
+    device_map = {
+        0: [0, 1, 2, 3, 4, 5, 6, 7],
+        1: [8, 9, 10, 11, 12, 13, 14, 15],
+        2: [16, 17, 18, 19, 20, 21, 22, 23],
+        3: [24, 25, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35],
+    }
+    model.parallelize(device_map)  # Splits the model across several devices
+    model.deparallelize()  # Put the model back on cpu and cleans memory by calling torch.cuda.empty_cache()
+    ```
+"""
+from typing import Optional, List, Tuple
+
+class GPT2MIXModel(GPT2PreTrainedModel):
+    _keys_to_ignore_on_load_missing = [
+        r"attn.masked_bias",
+        r"attn.bias",
+        r"lm_head.weight",
+    ]
+
+    def __init__(self, config):
+        super().__init__(config)
+        self.config = config
+        self.lm = GPT2LMHeadModel(config)
+
+        # Model parallel
+        self.model_parallel = False
+        self.device_map = None
+
+        # Initialize weights and apply final processing
+        self.post_init()
+        
+        # loss mode
+        self.mode = None
+
+        self.cost_embedding = self.lm.lm_head.weight.data.clone()
+
+    @add_start_docstrings(PARALLELIZE_DOCSTRING)
+    def parallelize(self, device_map=None):
+        self.device_map = (
+            get_device_map(len(self.lm.transformer.h), range(torch.cuda.device_count()))
+            if device_map is None
+            else device_map
+        )
+        assert_device_map(self.device_map, len(self.lm.transformer.h))
+        self.lm.transformer.parallelize(self.device_map)
+        self.lm.lm_head = self.lm.lm_head.to(self.lm.transformer.first_device)
+        self.model_parallel = True
+
+    @add_start_docstrings(DEPARALLELIZE_DOCSTRING)
+    def deparallelize(self):
+        self.lm.transformer.deparallelize()
+        self.lm.transformer = self.lm.transformer.to("cpu")
+        self.lm.lm_head = self.lm.lm_head.to("cpu")
+        self.model_parallel = False
+        torch.cuda.empty_cache()
+
+    def get_output_embeddings(self):
+        return self.lm.lm_head
+
+    def set_output_embeddings(self, new_embeddings):
+        self.lm.lm_head = new_embeddings
+
+    def get_input_embeddings(self):
+        return self.lm.transformer.wte
+
+    def set_input_embeddings(self, new_embeddings):
+        self.lm.transformer.wte = new_embeddings
+
+    def forward(
+        self,
+        input_ids,
+        attention_mask,
+        mode='mle',
+        use_cache=False,
+    ):
+        labels = input_ids * attention_mask - 100 * (1 - attention_mask)
+        outputs = self.lm.forward(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            use_cache=use_cache,
+        )
+        logits = outputs.logits
+        seq_len = logits.shape[1]-1
+        loss_fct = torch.nn.CrossEntropyLoss(reduction='none')
+        logits = logits[:, :-1, :].contiguous().view(-1, logits.shape[-1])
+        labels = labels[:, 1:].contiguous().view(-1)
+        mle_loss = loss_fct(logits, labels)
+        mask = attention_mask[:, 1:].contiguous().view(-1).to(logits.dtype)
+        with torch.no_grad():
+            q = torch.exp(-mle_loss.detach())
+        if self.mode is not None:
+            mode = self.mode
+        if mode == 'mixce':
+            """
+            MixCE from ACL2023 https://aclanthology.org/2023.acl-long.502.pdf
+            mixing_ratio==1 => standard MLE loss
+            """
+            mle_loss = (
+                self.config.mixing_ratio * mle_loss
+                + (1.0 - self.config.mixing_ratio) * (q) * mle_loss
+            )
+        elif mode == 'tvd':
+            """
+            Total variation distance from ICLR2023 https://openreview.net/pdf?id=VELL0PlWfc
+            mixing_ratio==1 => standard MLE loss
+            """
+            gamma = self.config.mixing_ratio
+            mle_loss =  self.config.mixing_ratio * mle_loss + (1.0-self.config.mixing_ratio)* torch.clamp((q / ((1-gamma) + gamma*q)), min=0.2, max=1.0) * mle_loss
+        elif mode == 'emo':
+            bsz = input_ids.shape[0]
+            labels_tmp = labels.clone()
+            labels_tmp[labels_tmp==(-100)] = 0
+            one_hot = torch.nn.functional.one_hot(labels_tmp, num_classes=self.lm.config.vocab_size)
+            stable_onehot = (one_hot+1e-15) / torch.linalg.vector_norm((one_hot+1e-15), ord=1, dim=-1, keepdim=True) # (bsz*seq_len, vocab_size)
+            embedding_matrix = self.cost_embedding # (vocab_size, hidden_size)
+            embedding_matrix = embedding_matrix / torch.linalg.vector_norm(embedding_matrix, ord=2, dim=1, keepdim=True)
+            p_contextual_repr = stable_onehot @ embedding_matrix # (bsz*seq_len, hidden_size)
+            q_grad = torch.log_softmax(logits, dim=-1).exp() # (bsz*seq_len, vocab_size)
+            q_contextual_repr = q_grad @ embedding_matrix # (bsz*seq_len, hidden_size)
+            cosine_dist = 1 - torch.sum(p_contextual_repr*q_contextual_repr, dim=-1) # (bsz*seq_len,)
+            cosine_dist = cosine_dist.reshape(bsz, seq_len)
+            emo_loss = cosine_dist.reshape(-1)
+            mle_loss = (mle_loss + (mle_loss / (emo_loss+1e-10)).detach() * emo_loss) * 0.5
+        elif mode == 'adaptive_emo':
+            bsz = input_ids.shape[0]
+            labels_tmp = labels.clone()
+            labels_tmp[labels_tmp==(-100)] = 0
+            one_hot = torch.nn.functional.one_hot(labels_tmp, num_classes=self.lm.config.vocab_size)
+            stable_onehot = (one_hot+1e-15) / torch.linalg.vector_norm((one_hot+1e-15), ord=1, dim=-1, keepdim=True) # (bsz*seq_len, vocab_size)
+            embedding_matrix = self.lm.lm_head.weight.data() # (vocab_size, hidden_size)
+            embedding_matrix = embedding_matrix / torch.linalg.vector_norm(embedding_matrix, ord=2, dim=1, keepdim=True)
+            p_contextual_repr = stable_onehot @ embedding_matrix # (bsz*seq_len, hidden_size)
+            q_grad = torch.log_softmax(logits, dim=-1).exp() # (bsz*seq_len, vocab_size)
+            gt_q = (q_grad * one_hot).detach()
+            q_final = q_grad - gt_q
+            q_contextual_repr = q_final @ embedding_matrix # (bsz*seq_len, hidden_size)
+            cosine_dist = 1 - torch.sum(p_contextual_repr*q_contextual_repr, dim=-1) # (bsz*seq_len,)
+            cosine_dist = cosine_dist.reshape(bsz, seq_len)
+            emo_loss = cosine_dist.reshape(-1)
+            mle_loss = (mle_loss + (mle_loss / (emo_loss+1e-10)).detach() * emo_loss) * 0.5
+        elif mode == 'mle':
+            """
+            Standard Maximum likelihood estimation
+            """
+            mle_loss = mle_loss
+        if self.config.reduction == "sum":
+            # sum over sequence length and batch size
+            outputs.loss = mle_loss.sum()
+        else:
+            # average over sequence length and batch size
+            outputs.loss = (mle_loss * mask).sum() / (1e-15 + mask.sum())
+        return outputs
+File Path: language_modeling/run_lm.py
+Content:
+#!/usr/bin/env python
+# coding=utf-8
+# Copyright 2021 The HuggingFace Inc. team. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+"""
+Fine-tuning the library models for causal language modeling (GPT, GPT-2, CTRL, ...)
+on a text file or a dataset without using HuggingFace Trainer.
+
+Here is the full list of checkpoints on the hub that can be fine-tuned by this script:
+https://huggingface.co/models?filter=text-generation
+"""
+# You can also adapt this script on your own causal language modeling task. Pointers for this are left as comments.
+
+import argparse
+import json
+import logging
+import math
+import os
+import random
+from itertools import chain
+from pathlib import Path
+
+import datasets
+import torch
+from accelerate import Accelerator, DistributedType
+from accelerate.logging import get_logger
+from accelerate.utils import set_seed
+from datasets import load_dataset
+from huggingface_hub import Repository, create_repo
+from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
+
+import transformers
+from transformers import (
+    CONFIG_MAPPING,
+    MODEL_MAPPING,
+    AutoConfig,
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    SchedulerType,
+    default_data_collator,
+    get_scheduler,
+    GPT2LMHeadModel,
+    Trainer
+)
+from gpt2 import GPT2MIXModel
+from transformers.utils import check_min_version, get_full_repo_name, send_example_telemetry
+from transformers.utils.versions import require_version
+from test_utils import test, ERF_RATIO, comput_erf, distribution_measures, test_batch
+from peft import (
+    LoraConfig,
+    get_peft_model,
+    get_peft_model_state_dict,
+    prepare_model_for_int8_training,
+    set_peft_model_state_dict,
+    PeftModel
+)
+
+
+logger = get_logger(__name__)
+
+MODEL_CONFIG_CLASSES = list(MODEL_MAPPING.keys())
+MODEL_TYPES = tuple(conf.model_type for conf in MODEL_CONFIG_CLASSES)
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Finetune a transformers model on a causal language modeling task")
+    parser.add_argument(
+        "--dataset_name",
+        type=str,
+        default=None,
+        help="The name of the dataset to use (via the datasets library).",
+    )
+    parser.add_argument(
+        "--dataset_config_name",
+        type=str,
+        default=None,
+        help="The configuration name of the dataset to use (via the datasets library).",
+    )
+    parser.add_argument(
+        "--train_file", type=str, default=None, help="A csv or a json file containing the training data."
+    )
+    parser.add_argument(
+        "--validation_file", type=str, default=None, help="A csv or a json file containing the validation data."
+    )
+    parser.add_argument(
+        "--test_file", type=str, default=None, help="A csv or a json file containing the validation data."
+    )
+    parser.add_argument(
+        "--validation_split_percentage",
+        default=5,
+        help="The percentage of the train set used as validation set in case there's no validation split",
+    )
+    parser.add_argument(
+        "--model_name_or_path",
+        type=str,
+        help="Path to pretrained model or model identifier from huggingface.co/models.",
+        required=False,
+    )
+    parser.add_argument(
+        "--config_name",
+        type=str,
+        default=None,
+        help="Pretrained config name or path if not the same as model_name",
+    )
+    parser.add_argument(
+        "--tokenizer_name",
+        type=str,
+        default=None,
+        help="Pretrained tokenizer name or path if not the same as model_name",
+    )
+    parser.add_argument(
+        "--use_slow_tokenizer",
+        action="store_true",
+        help="If passed, will use a slow tokenizer (not backed by the 🤗 Tokenizers library).",
+    )
+    parser.add_argument(
+        "--per_device_train_batch_size",
+        type=int,
+        default=8,
+        help="Batch size (per device) for the training dataloader.",
+    )
+    parser.add_argument(
+        "--per_device_eval_batch_size",
+        type=int,
+        default=8,
+        help="Batch size (per device) for the evaluation dataloader.",
+    )
+    parser.add_argument(
+        "--learning_rate",
+        type=float,
+        default=5e-5,
+        help="Initial learning rate (after the potential warmup period) to use.",
+    )
+    parser.add_argument("--weight_decay", type=float, default=0.0, help="Weight decay to use.")
+    parser.add_argument("--num_train_epochs", type=int, default=3, help="Total number of training epochs to perform.")
+    parser.add_argument(
+        "--max_train_steps",
+        type=int,
+        default=None,
+        help="Total number of training steps to perform. If provided, overrides num_train_epochs.",
+    )
+    parser.add_argument(
+        "--gradient_accumulation_steps",
+        type=int,
+        default=1,
+        help="Number of updates steps to accumulate before performing a backward/update pass.",
+    )
+    parser.add_argument(
+        "--lr_scheduler_type",
+        type=SchedulerType,
+        default="linear",
+        help="The scheduler type to use.",
+        choices=["linear", "cosine", "cosine_with_restarts", "polynomial", "constant", "constant_with_warmup"],
+    )
+    parser.add_argument(
+        "--num_warmup_steps", type=int, default=0, help="Number of steps for the warmup in the lr scheduler."
+    )
+    parser.add_argument("--output_dir", type=str, default=None, help="Where to store the final model.")
+    parser.add_argument("--seed", type=int, default=None, help="A seed for reproducible training.")
+    parser.add_argument(
+        "--model_type",
+        type=str,
+        default=None,
+        help="Model type to use if training from scratch.",
+        choices=MODEL_TYPES,
+    )
+    parser.add_argument(
+        "--block_size",
+        type=int,
+        default=None,
+        help=(
+            "Optional input sequence length after tokenization. The training dataset will be truncated in block of"
+            " this size for training. Default to the model max input length for single sentence inputs (take into"
+            " account special tokens)."
+        ),
+    )
+    parser.add_argument(
+        "--preprocessing_num_workers",
+        type=int,
+        default=None,
+        help="The number of processes to use for the preprocessing.",
+    )
+    parser.add_argument(
+        "--overwrite_cache", action="store_true", help="Overwrite the cached training and evaluation sets"
+    )
+    parser.add_argument(
+        "--no_keep_linebreaks", action="store_true", help="Do not keep line breaks when using TXT files."
+    )
+    parser.add_argument("--push_to_hub", action="store_true", help="Whether or not to push the model to the Hub.")
+    parser.add_argument(
+        "--hub_model_id", type=str, help="The name of the repository to keep in sync with the local `output_dir`."
+    )
+    parser.add_argument("--hub_token", type=str, help="The token to use to push to the Model Hub.")
+    parser.add_argument(
+        "--checkpointing_steps",
+        type=str,
+        default=None,
+        help="Whether the various states should be saved at the end of every n steps, or 'epoch' for each epoch.",
+    )
+    parser.add_argument(
+        "--resume_from_checkpoint",
+        type=str,
+        default=None,
+        help="If the training should continue from a checkpoint folder.",
+    )
+    parser.add_argument(
+        "--with_tracking",
+        action="store_true",
+        help="Whether to enable experiment trackers for logging.",
+    )
+    parser.add_argument(
+        "--report_to",
+        type=str,
+        default="all",
+        help=(
+            'The integration to report the results and logs to. Supported platforms are `"tensorboard"`,'
+            ' `"wandb"`, `"comet_ml"` and `"clearml"`. Use `"all"` (default) to report to all integrations.'
+            "Only applicable when `--with_tracking` is passed."
+        ),
+    )
+    parser.add_argument(
+        "--low_cpu_mem_usage",
+        action="store_true",
+        help=(
+            "It is an option to create the model as an empty shell, then only materialize its parameters when the pretrained weights are loaded."
+            "If passed, LLM loading time and RAM consumption will be benefited."
+        ),
+    )
+    parser.add_argument(
+        "--decode_newlen",
+        default=100,
+        type=int
+    )
+    parser.add_argument(
+        "--reduction",
+        type=str,
+        default="mean",
+        help="How to reduce MLE loss.",
+    )
+    parser.add_argument(
+        "--mixing_ratio",
+        type=float,
+        default=0.5,
+        help="The mixing ratio of mixces.",
+    )
+    parser.add_argument(
+        "--mode",
+        type=str,
+        default='mixce',
+    )
+    parser.add_argument(
+        "--decoding_mode",
+        type=str,
+        default='top_k',
+        choices=['top_k', 'top_p', 'unbiased', 'typical']
+    )
+    parser.add_argument(
+        "--from_scratch",
+        default=False,
+        action='store_true'
+    )
+    args = parser.parse_args()
+
+    # Sanity checks
+    if args.dataset_name is None and args.train_file is None and args.validation_file is None:
+        raise ValueError("Need either a dataset name or a training/validation file.")
+    else:
+        if args.train_file is not None:
+            extension = args.train_file.split(".")[-1]
+            assert extension in ["csv", "json", "txt"], "`train_file` should be a csv, json or txt file."
+        if args.validation_file is not None:
+            extension = args.validation_file.split(".")[-1]
+            assert extension in ["csv", "json", "txt"], "`validation_file` should be a csv, json or txt file."
+
+    if args.push_to_hub:
+        assert args.output_dir is not None, "Need an `output_dir` to create a repo when `--push_to_hub` is passed."
+
+    return args
+
+
+def main():
+    args = parse_args()
+    args_vars = vars(args)
+    print(f"{'='*10}CLI Arguments{'='*10}")
+    for arg in args_vars:
+        print(f"{arg}:\t\t\t{args_vars[arg]}")
+
+    # Initialize the accelerator. We will let the accelerator handle device placement for us in this example.
+    # If we're using tracking, we also need to initialize it here and it will by default pick up all supported trackers
+    # in the environment
+    accelerator_log_kwargs = {}
+
+    if args.with_tracking:
+        accelerator_log_kwargs["log_with"] = args.report_to
+        accelerator_log_kwargs["project_dir"] = args.output_dir
+
+    accelerator = Accelerator(gradient_accumulation_steps=args.gradient_accumulation_steps, **accelerator_log_kwargs)
+
+    # Make one log on every process with the configuration for debugging.
+    logging.basicConfig(
+        format="%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+        datefmt="%m/%d/%Y %H:%M:%S",
+        level=logging.INFO,
+    )
+    logger.info(accelerator.state, main_process_only=False)
+    if accelerator.is_local_main_process:
+        datasets.utils.logging.set_verbosity_warning()
+        transformers.utils.logging.set_verbosity_info()
+    else:
+        datasets.utils.logging.set_verbosity_error()
+        transformers.utils.logging.set_verbosity_error()
+
+    # If passed along, set the training seed now.
+    if args.seed is not None:
+        set_seed(args.seed)
+
+    # Handle the repository creation
+    if accelerator.is_main_process:
+        if args.push_to_hub:
+            if args.hub_model_id is None:
+                repo_name = get_full_repo_name(Path(args.output_dir).name, token=args.hub_token)
+            else:
+                repo_name = args.hub_model_id
+            create_repo(repo_name, exist_ok=True, token=args.hub_token)
+            repo = Repository(args.output_dir, clone_from=repo_name, token=args.hub_token)
+
+            with open(os.path.join(args.output_dir, ".gitignore"), "w+") as gitignore:
+                if "step_*" not in gitignore:
+                    gitignore.write("step_*\n")
+                if "epoch_*" not in gitignore:
+                    gitignore.write("epoch_*\n")
+        elif args.output_dir is not None:
+            os.makedirs(args.output_dir, exist_ok=True)
+    accelerator.wait_for_everyone()
+
+    # Get the datasets: you can either provide your own CSV/JSON/TXT training and evaluation files (see below)
+    # or just provide the name of one of the public datasets available on the hub at https://huggingface.co/datasets/
+    # (the dataset will be downloaded automatically from the datasets Hub).
+    #
+    # For CSV/JSON files, this script will use the column called 'text' or the first column if no column called
+    # 'text' is found. You can easily tweak this behavior (see below).
+    #
+    # In distributed training, the load_dataset function guarantee that only one local process can concurrently
+    # download the dataset.
+    if args.dataset_name is not None:
+        # Downloading and loading a dataset from the hub.
+        raw_datasets = load_dataset(args.dataset_name, args.dataset_config_name)
+        if 'spacerini' in args.dataset_name:
+            raw_datasets["train"] = load_dataset(
+                args.dataset_name,
+                args.dataset_config_name,
+                split=f"train[3%:]",
+            )
+        if "validation" not in raw_datasets.keys():
+            raw_datasets["validation"] = load_dataset(
+                args.dataset_name,
+                args.dataset_config_name,
+                split=f"train[:{args.validation_split_percentage}%]",
+            )
+            raw_datasets["train"] = load_dataset(
+                args.dataset_name,
+                args.dataset_config_name,
+                split=f"train[{args.validation_split_percentage}%:]",
+            )
+        if "test" not in raw_datasets.keys():
+            raw_datasets["validation"] = load_dataset(
+                args.dataset_name,
+                args.dataset_config_name,
+                split=f"validation[:50%]",
+            )
+            raw_datasets["test"] = load_dataset(
+                args.dataset_name,
+                args.dataset_config_name,
+                split=f"validation[50%:]",
+            )
+    else:
+        data_files = {}
+        dataset_args = {}
+        if args.train_file is not None:
+            data_files["train"] = args.train_file
+        if args.validation_file is not None:
+            data_files["validation"] = args.validation_file
+        if args.test_file is not None:
+            data_files["test"] = args.test_file
+        extension = args.train_file.split(".")[-1]
+        if extension == "txt":
+            extension = "text"
+            dataset_args["keep_linebreaks"] = not args.no_keep_linebreaks
+        raw_datasets = load_dataset(extension, data_files=data_files, **dataset_args)
+        if 'webtext' in args.train_file:
+            raw_datasets["train"] = load_dataset(extension, data_files=data_files, split=f"train", **dataset_args)
+        elif 'medium' in args.train_file:
+            raw_datasets["train"] = load_dataset(extension, data_files=data_files, split=f"train", **dataset_args)
+        print('train:', len(raw_datasets['train']))
+        print('val:', len(raw_datasets['validation']))
+        print('test: ', len(raw_datasets['test']))
+
+    # See more about loading any type of standard or custom dataset (from files, python dict, pandas DataFrame, etc) at
+    # https://huggingface.co/docs/datasets/loading_datasets.html.
+
+    # Load pretrained model and tokenizer
+    #
+    # In distributed training, the .from_pretrained methods guarantee that only one local process can concurrently
+    # download model & vocab.
+    if args.config_name:
+        config = AutoConfig.from_pretrained(args.config_name)
+    elif args.model_name_or_path:
+        config = AutoConfig.from_pretrained(args.model_name_or_path)
+    else:
+        config = CONFIG_MAPPING[args.model_type]()
+        logger.warning("You are instantiating a new config instance from scratch.")
+    config.reduction = args.reduction
+    config.mixing_ratio = args.mixing_ratio
+
+    if args.tokenizer_name:
+        tokenizer = AutoTokenizer.from_pretrained(args.tokenizer_name, use_fast=not args.use_slow_tokenizer)
+    elif args.model_name_or_path:
+        tokenizer = AutoTokenizer.from_pretrained(args.model_name_or_path, use_fast=not args.use_slow_tokenizer)
+    else:
+        raise ValueError(
+            "You are instantiating a new tokenizer from scratch. This is not supported by this script."
+            "You can do it from another script, save it, and load it from here, using --tokenizer_name."
+        )
+
+    if args.model_name_or_path:
+        MODEL_CLASS = GPT2MIXModel
+        model = MODEL_CLASS.from_pretrained(
+            args.model_name_or_path,
+            from_tf=bool(".ckpt" in args.model_name_or_path),
+            config=config,
+            )
+        if not args.from_scratch:
+            model.lm = AutoModelForCausalLM.from_pretrained(args.model_name_or_path)
+            from copy import deepcopy
+            model.cost_embedding = deepcopy(model.lm.lm_head.weight.data).to('cuda:0')
+        else:
+            logger.info("Training new lm model from scratch")
+            model.lm = AutoModelForCausalLM.from_config(config)
+            from copy import deepcopy
+            pretrained_lm = AutoModelForCausalLM.from_pretrained('./gpt2-large')
+            model.cost_embedding = deepcopy(pretrained_lm.lm_head.weight.data).to('cuda:0')
+            del pretrained_lm
+            logger.info("cost_embedding initialized from pretrained LM head")
+            logger.info(f"{model.cost_embedding.shape}")
+    else:
+        logger.info("Training new model from scratch")
+        model = AutoModelForCausalLM.from_config(config)
+    print(f"Model class: {model.__class__}")
+
+    # We resize the embeddings only when necessary to avoid index errors. If you are creating a model from scratch
+    # on a small vocab and want a smaller embedding size, remove this test.
+    embedding_size = model.get_input_embeddings().weight.shape[0]
+    if len(tokenizer) > embedding_size:
+        model.resize_token_embeddings(len(tokenizer))
+
+    # Preprocessing the datasets.
+    # First we tokenize all the texts.
+    column_names = raw_datasets["train"].column_names
+    text_column_name = "text" if "text" in column_names else column_names[0]
+
+    def tokenize_function(examples):
+        return tokenizer(examples[text_column_name])
+
+    with accelerator.main_process_first():
+        tokenized_datasets = raw_datasets.map(
+            tokenize_function,
+            batched=True,
+            num_proc=args.preprocessing_num_workers,
+            remove_columns=column_names,
+            load_from_cache_file=not args.overwrite_cache,
+            desc="Running tokenizer on dataset",
+        )
+
+    if args.block_size is None:
+        block_size = tokenizer.model_max_length
+        if block_size > 1024:
+            logger.warning(
+                "The chosen tokenizer supports a `model_max_length` that is longer than the default `block_size` value"
+                " of 1024. If you would like to use a longer `block_size` up to `tokenizer.model_max_length` you can"
+                " override this default with `--block_size xxx`."
+            )
+        block_size = 1024
+    else:
+        if args.block_size > tokenizer.model_max_length:
+            logger.warning(
+                f"The block_size passed ({args.block_size}) is larger than the maximum length for the model"
+                f"({tokenizer.model_max_length}). Using block_size={tokenizer.model_max_length}."
+            )
+        block_size = min(args.block_size, tokenizer.model_max_length)
+
+    # Main data processing function that will concatenate all texts from our dataset and generate chunks of block_size.
+    def group_texts(examples):
+        # Concatenate all texts.
+        concatenated_examples = {k: list(chain(*examples[k])) for k in examples.keys()}
+        total_length = len(concatenated_examples[list(examples.keys())[0]])
+        # We drop the small remainder, and if the total_length < block_size  we exclude this batch and return an empty dict.
+        # We could add padding if the model supported it instead of this drop, you can customize this part to your needs.
+        total_length = (total_length // block_size) * block_size
+        # Split by chunks of max_len.
+        result = {
+            k: [t[i : i + block_size] for i in range(0, total_length, block_size)]
+            for k, t in concatenated_examples.items()
+        }
+        result["labels"] = result["input_ids"].copy()
+        return result
+
+    # Note that with `batched=True`, this map processes 1,000 texts together, so group_texts throws away a remainder
+    # for each of those groups of 1,000 texts. You can adjust that batch_size here but a higher value might be slower
+    # to preprocess.
+    #
+    # To speed up this part, we use multiprocessing. See the documentation of the map method for more information:
+    # https://huggingface.co/docs/datasets/package_reference/main_classes.html#datasets.Dataset.map
+
+    with accelerator.main_process_first():
+        lm_datasets = tokenized_datasets.map(
+            group_texts,
+            batched=True,
+            num_proc=args.preprocessing_num_workers,
+            load_from_cache_file=not args.overwrite_cache,
+            desc=f"Grouping texts in chunks of {block_size}",
+        )
+
+    train_dataset = lm_datasets["train"]
+    eval_dataset = lm_datasets["validation"]
+
+    # Log a few random samples from the training set:
+    for index in random.sample(range(len(train_dataset)), 3):
+        logger.info(f"Sample {index} of the training set: {train_dataset[index]}.")
+
+    # DataLoaders creation:
+    train_dataloader = DataLoader(
+        train_dataset, shuffle=True, collate_fn=default_data_collator, batch_size=args.per_device_train_batch_size
+    )
+    eval_dataloader = DataLoader(
+        eval_dataset, collate_fn=default_data_collator, batch_size=args.per_device_eval_batch_size
+    )
+
+    # Optimizer
+    # Split weights in two groups, one with weight decay and the other not.
+    no_decay = ["bias", "layer_norm.weight"]
+    optimizer_grouped_parameters = [
+        {
+            "params": [p for n, p in model.named_parameters() if not any(nd in n for nd in no_decay) and p.requires_grad],
+            "weight_decay": args.weight_decay,
+        },
+        {
+            "params": [p for n, p in model.named_parameters() if any(nd in n for nd in no_decay) and p.requires_grad],
+            "weight_decay": 0.0,
+        },
+    ]
+    optimizer = torch.optim.AdamW(optimizer_grouped_parameters, lr=args.learning_rate)
+
+    # Scheduler and math around the number of training steps.
+    overrode_max_train_steps = False
+    num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
+    if args.max_train_steps is None:
+        args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
+        overrode_max_train_steps = True
+
+    lr_scheduler = get_scheduler(
+        name=args.lr_scheduler_type,
+        optimizer=optimizer,
+        num_warmup_steps=args.num_warmup_steps * args.gradient_accumulation_steps,
+        num_training_steps=args.max_train_steps * args.gradient_accumulation_steps,
+    )
+
+    # Prepare everything with our `accelerator`.
+    model, optimizer, train_dataloader, eval_dataloader, lr_scheduler = accelerator.prepare(
+        model, optimizer, train_dataloader, eval_dataloader, lr_scheduler
+    )
+
+    # On TPU, the tie weights in our model have been disconnected, so we need to restore the ties.
+    if accelerator.distributed_type == DistributedType.TPU:
+        model.tie_weights()
+
+    # We need to recalculate our total training steps as the size of the training dataloader may have changed.
+    num_update_steps_per_epoch = math.ceil(len(train_dataloader) / args.gradient_accumulation_steps)
+    if overrode_max_train_steps:
+        args.max_train_steps = args.num_train_epochs * num_update_steps_per_epoch
+    # Afterwards we recalculate our number of training epochs
+    args.num_train_epochs = math.ceil(args.max_train_steps / num_update_steps_per_epoch)
+
+    # Figure out how many steps we should save the Accelerator states
+    checkpointing_steps = args.checkpointing_steps
+    if checkpointing_steps is not None and checkpointing_steps.isdigit():
+        checkpointing_steps = int(checkpointing_steps)
+
+    # Train!
+    total_batch_size = args.per_device_train_batch_size * accelerator.num_processes * args.gradient_accumulation_steps
+
+    logger.info("***** Running training *****")
+    logger.info(f"  Num examples = {len(train_dataset)}")
+    logger.info(f"  Num Epochs = {args.num_train_epochs}")
+    logger.info(f"  Instantaneous batch size per device = {args.per_device_train_batch_size}")
+    logger.info(f"  Total train batch size (w. parallel, distributed & accumulation) = {total_batch_size}")
+    logger.info(f"  Gradient Accumulation steps = {args.gradient_accumulation_steps}")
+    logger.info(f"  Total optimization steps = {args.max_train_steps}")
+    # Only show the progress bar once on each machine.
+    progress_bar = tqdm(range(args.max_train_steps), disable=not accelerator.is_local_main_process)
+    completed_steps = 0
+    starting_epoch = 0
+
+
+    # Potentially load in the weights and states from a previous save
+    if args.resume_from_checkpoint:
+        if args.resume_from_checkpoint is not None or args.resume_from_checkpoint != "":
+            accelerator.print(f"Resumed from checkpoint: {args.resume_from_checkpoint}")
+            accelerator.load_state(args.resume_from_checkpoint)
+            path = os.path.basename(args.resume_from_checkpoint)
+        else:
+            # Get the most recent checkpoint
+            dirs = [f.name for f in os.scandir(os.getcwd()) if f.is_dir()]
+            dirs.sort(key=os.path.getctime)
+            path = dirs[-1]  # Sorts folders by date modified, most recent checkpoint is the last
+        # Extract `epoch_{i}` or `step_{i}`
+        training_difference = os.path.splitext(path)[0]
+
+        if "epoch" in training_difference:
+            starting_epoch = int(training_difference.replace("epoch_", "")) + 1
+            resume_step = None
+            completed_steps = starting_epoch * num_update_steps_per_epoch
+        else:
+            # need to multiply `gradient_accumulation_steps` to reflect real steps
+            resume_step = int(training_difference.replace("step_", "")) * args.gradient_accumulation_steps
+            starting_epoch = resume_step // len(train_dataloader)
+            resume_step -= starting_epoch * len(train_dataloader)
+            completed_steps = resume_step // args.gradient_accumulation_steps
+
+    # update the progress_bar if load from checkpoint
+    progress_bar.update(completed_steps)
+
+    best_ppl = 1e15
+    from copy import deepcopy
+    for epoch in range(starting_epoch, args.num_train_epochs):
+        model.train()
+        if args.with_tracking:
+            total_loss = 0
+        if args.resume_from_checkpoint and epoch == starting_epoch and resume_step is not None:
+            # We skip the first `n` batches in the dataloader when resuming from a checkpoint
+            active_dataloader = accelerator.skip_first_batches(train_dataloader, resume_step)
+        else:
+            active_dataloader = train_dataloader
+        for step, batch in enumerate(active_dataloader):
+            with accelerator.accumulate(model):
+                del batch['labels']
+                outputs = model(**batch, mode=args.mode)
+                loss = outputs.loss
+                # We keep track of the loss at each epoch
+                if args.with_tracking:
+                    total_loss += loss.detach().float()
+                accelerator.backward(loss)
+                optimizer.step()
+                lr_scheduler.step()
+                optimizer.zero_grad()
+
+
+            # Checks if the accelerator has performed an optimization step behind the scenes
+            if accelerator.sync_gradients:
+                progress_bar.update(1)
+                progress_bar.set_description(f"loss: {loss.detach().item():.2f}")
+                completed_steps += 1
+            
+
+            if isinstance(checkpointing_steps, int):
+                if completed_steps % checkpointing_steps == 0:
+                    output_dir = f"step_{completed_steps }"
+                    if args.output_dir is not None:
+                        output_dir = os.path.join(args.output_dir, output_dir)
+                    accelerator.save_state(output_dir)
+            if completed_steps >= args.max_train_steps:
+                break
+
+        model.eval()
+        losses = []
+        for step, batch in enumerate(eval_dataloader):
+            del batch['labels']
+            with torch.no_grad():
+                outputs = model(**batch, mode=args.mode)
+            loss = outputs.loss
+            losses.append(accelerator.gather_for_metrics(loss.repeat(args.per_device_eval_batch_size)))
+
+        losses = torch.cat(losses)
+        try:
+            eval_loss = torch.mean(losses)
+            perplexity = math.exp(eval_loss)
+        except OverflowError:
+            perplexity = float("inf")
+
+        logger.info(f"epoch {epoch}: perplexity: {perplexity} eval_loss: {eval_loss}")
+
+        if perplexity < best_ppl:
+            best_ppl = perplexity
+            print(f"New best ppl: {best_ppl:.3f}")
+            # save checkpoint
+            if args.output_dir is not None:
+                accelerator.wait_for_everyone()
+                unwrapped_model = accelerator.unwrap_model(model)
+                unwrapped_model.save_pretrained(
+                    args.output_dir, is_main_process=accelerator.is_main_process, save_function=accelerator.save
+                )
+                if accelerator.is_main_process:
+                    tokenizer.save_pretrained(args.output_dir)
+
+        if args.with_tracking:
+            accelerator.log(
+                {
+                    "perplexity": perplexity,
+                    "eval_loss": eval_loss,
+                    "train_loss": total_loss.item() / len(train_dataloader),
+                    "epoch": epoch,
+                    "step": completed_steps,
+                },
+                step=completed_steps,
+            )
+
+        if args.checkpointing_steps == "epoch":
+            output_dir = f"epoch_{epoch}"
+            if args.output_dir is not None:
+                output_dir = os.path.join(args.output_dir, output_dir)
+            accelerator.save_state(output_dir)
+
+    if args.with_tracking:
+        accelerator.end_training()
+
+    if args.output_dir is not None:
+        accelerator.wait_for_everyone()
+        if accelerator.is_main_process:
+            with open(os.path.join(args.output_dir, "all_results.json"), "w") as f:
+                json.dump({"perplexity": perplexity}, f)
+        MODEL_CLASS = GPT2MIXModel
+        model = MODEL_CLASS.from_pretrained(args.output_dir).to('cuda:0')
+        model.eval()
+        import statistics
+        from collections import defaultdict
+        metrics = defaultdict(lambda: dict())
+        for decoding_mode in ['unbiased']:
+            args.decoding_mode = decoding_mode
+            print(f"Evaluating {args.decoding_mode}")
+            all_mauves = []
+            for iteration in range(5):
+                mauve = test_batch(iteration, args, model, raw_datasets, split='test', do_sample=True)
+                all_mauves.append(mauve)
+            mean_test_mauve = statistics.mean(all_mauves)
+            std_test_mauve = statistics.stdev(all_mauves)
+            print(f"Mean Mauve of {decoding_mode}: {mean_test_mauve}")
+            print(f"Std of Mauve of {decoding_mode}: {std_test_mauve}")
+            metrics['unbiased']['mean'] = mean_test_mauve
+            metrics['unbiased']['std'] = std_test_mauve
+        import pprint
+        pprint.pprint(metrics)
+
+
+if __name__ == "__main__":
+    main()
+File Path: language_modeling/test_utils.py
+Content:
+import numpy as np
+import torch
+import transformers
+from transformers import AutoModel, AutoTokenizer
+from collections import defaultdict
+from scipy.spatial.distance import cosine
+from evaluate import load
+import mauve
+from collections import defaultdict
+from tqdm.auto import tqdm
+from prettytable import PrettyTable
+from gpt2 import GPT2MIXModel
+from opt import OPTMIXModel
+import os
+import math
+perplexity = load("perplexity", module_type="metric")
+rouge = load('rouge')
+bertscore = load("bertscore")
+# mauve = load('mauve')
+
+
+def green(text):
+    return '\033[92m' + text + '\033[0m'
+
+
+def repetitiveness(continuation, n: int):
+    """
+    n-gram repetitiveness, the lower the better
+    """
+    counter = defaultdict(lambda: 0)
+
+    def ngram(string, n_gram):
+        tokens = string.split(" ")
+        for i in range(0, len(tokens)-n_gram+1, 1):
+            yield tokens[i:i+n_gram]
+    for span in ngram(continuation, n):
+        counter["_".join(span)] += 1
+    if sum(counter.values()) == 0:
+        return 0.0
+    return 1 - len(list(counter.keys())) / sum(counter.values())
+
+
+@torch.no_grad()
+def semantic_sim(prefixes, continuations, model, tokenizer):
+    inputs = tokenizer(prefixes, padding=True, truncation=True,
+                       return_tensors="pt").to(model.device)
+    prefix_embeddings = model(**inputs, output_hidden_states=True,
+                        return_dict=True).pooler_output
+    inputs = tokenizer(continuations, padding=True, truncation=True,
+                       return_tensors="pt").to(model.device)
+    continuation_embeddings = model(**inputs, output_hidden_states=True,
+                        return_dict=True).pooler_output
+    prefix_embeddings = prefix_embeddings / torch.linalg.vector_norm(prefix_embeddings, ord=2, dim=-1, keepdim=True)
+    continuation_embeddings = continuation_embeddings / torch.linalg.vector_norm(continuation_embeddings, ord=2, dim=-1, keepdim=True)
+    # cosine similarity
+    cos_sim = (prefix_embeddings*continuation_embeddings).sum(dim=-1).mean().item()
+    return cos_sim
+
+def kl_div(logits_q, logits_p):
+    """
+    q: distributions being evaluated
+    p: reference distribution
+    """
+    log_q = torch.log_softmax(logits_q, dim=-1)
+    q = log_q.exp()
+    log_p = torch.log_softmax(logits_p, dim=-1)
+    res = (-q*log_p).sum(dim=-1) + (q*log_q).sum(dim=-1)
+    return res
+
+@torch.no_grad()
+def compute_ppl(oracle_model, oracle_tokenizer, texts):
+    """
+    compute perpplexity using oracle model
+    """
+    import statistics, math
+    BS = 64
+    oracle_tokenizer.padding_side = 'right'
+    losses = []
+    for i in tqdm(range(0, len(texts), BS), total=(len(texts)//BS)):
+        input_text = texts[i:(i+BS)]
+        inputs = oracle_tokenizer(input_text, padding=True, return_tensors='pt').to('cuda')
+        inputs['labels'] = inputs['input_ids'].clone()
+        inputs['labels'][inputs['labels'].eq(oracle_tokenizer.pad_token_id)] = -100
+        outputs = oracle_model(**inputs)
+        ce_loss = outputs.loss
+        losses.append(ce_loss.cpu().item())
+    mean_ce_loss = statistics.mean(losses)
+    ppl = math.exp(mean_ce_loss)
+    print(f"PPL using oracle model: {ppl:.2f}")
+    return ppl
+
+
+@torch.no_grad()
+def distribution_measures(args, model, raw_datasets, split='validation'):
+    """
+    Computes a set of distributional measures that reflect the recall/precision/middle of learned probablistic model distribution
+    """
+    from transformers import AutoModelForCausalLM
+    device = 'cuda:0'
+    # if args.dataset_name is None:
+    #     reference_model_id = "gpt2-medium"
+    # else:
+    # reference_model_id = "EleutherAI/gpt-neo-125m"
+    # reference_model_id = "./gpt_neo_1.3b"
+    # reference_model_id = "gpt2-large"
+    reference_model_id = "./gpt_neo_1.3b/gptneo-1.3b"
+    reference_model = AutoModelForCausalLM.from_pretrained(reference_model_id).to(device)
+    reference_model.eval()
+    if isinstance(model, GPT2MIXModel) or isinstance(model, OPTMIXModel):
+        model = model.lm
+    eval_model = transformers.AutoModelForCausalLM.from_pretrained(args.model_name_or_path).to(device)
+    tokenizer = transformers.AutoTokenizer.from_pretrained(args.model_name_or_path)
+    tokenizer.pad_token_id = tokenizer.eos_token_id
+    eval_model.load_state_dict(model.state_dict())
+    eval_model.eval()
+    eval_set = raw_datasets[split]
+    try:
+        corpus = eval_set['text']
+    except:
+        corpus = eval_set['sentence']
+    measures = defaultdict(lambda: list())
+    losses = []
+    for i in tqdm(range(len(corpus))):
+        text = corpus[i]
+        if len(text.split(" "))<20 or tokenizer(text, return_tensors='pt').input_ids.shape[-1]>500:
+            continue
+        inputs = tokenizer([text], return_tensors='pt').to(device)
+        inputs['labels'] = inputs['input_ids'].clone()
+        outputs = eval_model(**inputs)
+        forward_ce_loss = outputs.loss.item()
+        losses.append(forward_ce_loss)
+        logits_model = outputs.logits[:, 1:, :]
+        prob_model = torch.softmax(logits_model, dim=-1)
+        logits_reference = reference_model(**inputs).logits[:, 1:, :]
+        prob_reference = torch.softmax(logits_reference, dim=-1)
+        assert (prob_model.shape==prob_reference.shape)
+        # forward ce
+        forward_ce = (-prob_reference*torch.log_softmax(logits_model, dim=-1)).sum(dim=-1).mean(dim=-1).item()
+        # reverse ce
+        reverse_ce = (-prob_model*torch.log_softmax(logits_reference, dim=-1)).sum(dim=-1).mean(dim=-1).item()
+        # tvd
+        tvd = 0.5*(torch.abs(prob_model-prob_reference)).sum(dim=-1).mean(dim=-1).item()
+        # reverse KL div
+        reverse_kl_div = ((-prob_model*torch.log_softmax(logits_reference, dim=-1)).sum(dim=-1) + (prob_model*torch.log_softmax(logits_model, dim=-1)).sum(dim=-1)).mean(dim=-1).item()
+        measures['forward_ce'].append(forward_ce)
+        measures['reverse_ce'].append(reverse_ce)
+        measures['tvd'].append(tvd)
+        measures['reverse_kl'].append(reverse_kl_div)
+    # average
+    from statistics import mean
+    for key in measures:
+        measures[key] = mean(measures[key])
+    print("Distribution measures:")
+    for k in measures:
+        print(f"{k}: {measures[k]:.3f}")
+    mean_ce_loss = mean(losses)
+    ppl = math.exp(mean_ce_loss)
+    print(f"Test set perplexity: {ppl:.3f}")
+    return measures
+
+@torch.no_grad()
+def test_batch(iteration, args, model, raw_datasets, split='validation', do_sample=False, p=0.95):
+    """
+    args: parsed arguments
+    model: the model that is being trained
+    raw_datasets: the dataset from which prefixes are sampled from
+    """
+    if isinstance(model, GPT2MIXModel) or isinstance(model, OPTMIXModel):
+        model = model.lm
+    global perplexity, rouge, bertscore, mauve
+    device = 'cuda:0'
+    eval_model = transformers.AutoModelForCausalLM.from_pretrained(
+        args.model_name_or_path).to(device)
+    eval_model.load_state_dict(model.state_dict())
+    tokenizer = transformers.AutoTokenizer.from_pretrained(
+        args.model_name_or_path)
+    tokenizer.pad_token_id = tokenizer.eos_token_id
+    tokenizer.padding_side = 'left'
+    tokenizer.truncation_side = 'left'
+    eval_model.eval()
+    val_set = raw_datasets[split]
+    cnt = 0
+    if args.dataset_name is None:
+        if 'webtext' in args.train_file:
+            eval_num = 5000
+            prefix_len = 20
+            continuation_len = 80
+        elif 'writing' in args.train_file:
+            eval_num = 5000
+            prefix_len = 35
+            continuation_len = 80
+        else:
+            # wikitext-103
+            eval_num = 5000
+            prefix_len = 20
+            continuation_len = 80
+    elif 'wiki' in args.dataset_name:
+        eval_num = 4000
+        prefix_len = 20
+        continuation_len = 80
+    elif 'ptb' in args.dataset_name:
+        eval_num = 4000
+        prefix_len = 5
+        continuation_len = 25
+    elif 'ag' in args.dataset_name:
+        eval_num = 4000
+        prefix_len = 10
+        continuation_len = 30
+    # for text in tqdm(prefixs, total=len(prefixs)):
+    gold_continuations = []
+    pred_continuations = []
+    eval_num = min(eval_num, len(val_set))
+    BS = 64
+    for i in tqdm(range(0, eval_num, BS), total=(eval_num//BS)):
+        try:
+            texts = val_set['text'][i:(i+BS)]
+        except:
+            texts = val_set['sentence'][i:(i+BS)]
+        texts_ = []
+        for text in texts:
+            if len(text) < 100 or len(text.split(" ")) < (prefix_len+continuation_len+10) or "==" in text: continue
+            texts_.append(text)
+        prefixs = []
+        cur_gold_continuations = []
+        for text in texts_:
+            prefix = " ".join(text.split(" ")[:prefix_len])
+            gold_continuation = " ".join(text.split(
+                " ")[prefix_len:prefix_len+continuation_len])
+            prefixs.append(prefix)
+            cur_gold_continuations.append(prefix+" "+gold_continuation)
+        cnt += 1
+        if len(prefixs)<=0: continue
+        inputs = tokenizer(prefixs, return_tensors='pt', padding=True, truncation=True).to(device)
+        new_len = args.decode_newlen
+        generate_ids = eval_model.generate(
+            input_ids=inputs['input_ids'],
+            attention_mask=inputs['attention_mask'],
+            do_sample=do_sample,
+            top_k=50 if args.decoding_mode=='top_k' else 0,
+            top_p=p if args.decoding_mode=='top_p' else 1.0,
+            typical_p=0.2 if args.decoding_mode=='typical' else 1.0,
+            min_new_tokens=new_len,
+            max_new_tokens=new_len+1,
+        )
+        output = tokenizer.batch_decode(
+            generate_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False)
+        for j in range(len(prefixs)):
+            continuation = output[j][len(prefixs[j]):]
+            pred_continuations.append(prefixs[j]+" "+continuation)
+        gold_continuations.extend(cur_gold_continuations)
+    mauve_score = mauve.compute_mauve(
+        p_text=gold_continuations, q_text=pred_continuations, device_id=0, max_text_length=256, verbose=True, batch_size=32, featurize_model_name='./gpt2-large').mauve
+    rouge_results = rouge.compute(
+        predictions=pred_continuations, references=gold_continuations)
+    table = PrettyTable()
+    table.field_names = ["Mauve↑", "R-1↑", "R-2↑", "R-L↑"]
+    table.add_row([
+                   round(mauve_score, 3),
+                   round(rouge_results['rouge1'], 4),
+                   round(rouge_results['rouge2'], 4),
+                   round(rouge_results['rougeL'], 4),
+                   ])
+    print(table)
+    del eval_model
+    torch.cuda.empty_cache()
+    # write generation to file
+    with open(os.path.join(args.output_dir, f"completion_{do_sample}sample_{iteration}.json"), "w") as f:
+        import json
+        data = [{"gold": gold, "pred": pred}
+                for gold, pred in zip(gold_continuations, pred_continuations)]
+        json.dump(data, f, indent=4)
+    # return mauve_score
+    return mauve_score
+
+Output:
+{
+    "experimental_code": "class EMOLlamaForCausalLM(LlamaForCausalLM):\n    def __init__(self, config):\n        super().__init__(config)\n        self.model = LlamaModel(config)\n\n        self.lm_head = torch.nn.Linear(config.hidden_size, config.vocab_size, bias=False)\n\n        # Initialize weights and apply final processing\n        self.post_init()\n\n    def forward(\n        self,\n        input_ids: torch.LongTensor = None,\n        attention_mask: Optional[torch.Tensor] = None,\n        position_ids: Optional[torch.LongTensor] = None,\n        past_key_values: Optional[List[torch.FloatTensor]] = None,\n        inputs_embeds: Optional[torch.FloatTensor] = None,\n        labels: Optional[torch.LongTensor] = None,\n        use_cache: Optional[bool] = None,\n        output_attentions: Optional[bool] = None,\n        output_hidden_states: Optional[bool] = None,\n        return_dict: Optional[bool] = None,\n    ):\n\n        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions\n        output_hidden_states = (\n            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states\n        )\n        return_dict = return_dict if return_dict is not None else self.config.use_return_dict\n\n        outputs = self.model(\n            input_ids=input_ids,\n            attention_mask=attention_mask,\n            position_ids=position_ids,\n            past_key_values=past_key_values,\n            inputs_embeds=inputs_embeds,\n            use_cache=use_cache,\n            output_attentions=output_attentions,\n            output_hidden_states=output_hidden_states,\n            return_dict=return_dict,\n        )\n\n        # ======================================================================== #\n        #                   Compute the MLE loss\n        # ======================================================================== #\n        hidden_states = outputs[0]\n        logits = self.lm_head(hidden_states)\n        mask = labels[:, 1:].contiguous().view(-1)\n        mask = (mask!=-100).to(logits.dtype)\n        loss_fct = torch.nn.CrossEntropyLoss(reduction='none')\n        logits = logits[:, :-1, :].contiguous().view(-1, logits.shape[-1])\n        labels = labels[:, 1:].contiguous().view(-1)\n        mle_loss = loss_fct(logits, labels)\n\n        # ======================================================================== #\n        #                   Compute the EMO loss\n        # ======================================================================== #\n        labels_tmp = labels.clone()\n        labels_tmp[labels_tmp==(-100)] = 0\n        one_hot = torch.nn.functional.one_hot(labels_tmp, num_classes=self.config.vocab_size).to(logits.dtype)\n        stable_onehot = (one_hot+1e-15) / torch.linalg.vector_norm((one_hot+1e-15), ord=1, dim=-1, keepdim=True) # (bsz*seq_len, vocab_size)\n        embedding_matrix = self.cost_embedding # (vocab_size, hidden_size)\n        embedding_matrix = embedding_matrix / torch.linalg.vector_norm(embedding_matrix, ord=2, dim=1, keepdim=True)\n        p_contextual_repr = stable_onehot @ embedding_matrix # (bsz*seq_len, hidden_size)\n        q_grad = torch.log_softmax(logits, dim=-1).exp() # (bsz*seq_len, vocab_size)\n        gt_q = (q_grad * one_hot).detach()\n        q_final = q_grad - gt_q\n        q_contextual_repr = q_final @ embedding_matrix # (bsz*seq_len, hidden_size)\n        emo_loss = (1 - torch.sum(p_contextual_repr*q_contextual_repr, dim=-1)) # (bsz*seq_len,)\n\n        # ======================================================================== #\n        #                   Compose the final loss\n        # ======================================================================== #\n        loss = (torch.min((mle_loss / (emo_loss+1e-10)).detach(), torch.ones_like(mle_loss, dtype=mle_loss.dtype, device=mle_loss.device)*3.0) * emo_loss + mle_loss) * 0.5\n        loss = (loss * mask).sum() / (1e-15 + mask.sum())\n\n        output = (logits,) + outputs[1:]\n        return (loss,) + output if loss is not None else output\n\n\nclass EMOLlama2ForCausalLM(LlamaForCausalLM):\n    def forward(\n        self,\n        input_ids: torch.LongTensor = None,\n        attention_mask: Optional[torch.Tensor] = None,\n        position_ids: Optional[torch.LongTensor] = None,\n        past_key_values: Optional[List[torch.FloatTensor]] = None,\n        inputs_embeds: Optional[torch.FloatTensor] = None,\n        labels: Optional[torch.LongTensor] = None,\n        use_cache: Optional[bool] = None,\n        output_attentions: Optional[bool] = None,\n        output_hidden_states: Optional[bool] = None,\n        return_dict: Optional[bool] = None,\n    ):\n\n        output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions\n        output_hidden_states = (\n            output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states\n        )\n        return_dict = return_dict if return_dict is not None else self.config.use_return_dict\n\n        # decoder outputs consists of (dec_features, layer_state, dec_hidden, dec_attn)\n        outputs = self.model(\n            input_ids=input_ids,\n            attention_mask=attention_mask,\n            position_ids=position_ids,\n            past_key_values=past_key_values,\n            inputs_embeds=inputs_embeds,\n            use_cache=use_cache,\n            output_attentions=output_attentions,\n            output_hidden_states=output_hidden_states,\n            return_dict=return_dict,\n        )\n\n        # ======================================================================== #\n        #                   Compute the MLE loss\n        # ======================================================================== #\n        hidden_states = outputs[0]\n        logits = self.lm_head(hidden_states)\n        mask = labels[:, 1:].contiguous().view(-1)\n        mask = (mask!=-100).to(logits.dtype)\n        loss_fct = torch.nn.CrossEntropyLoss(reduction='none')\n        logits = logits[:, :-1, :].contiguous().view(-1, logits.shape[-1])\n        labels = labels[:, 1:].contiguous().view(-1)\n        mle_loss = loss_fct(logits, labels)\n\n        # ======================================================================== #\n        #                   Compute the EMO loss\n        # ======================================================================== #\n        labels_tmp = labels.clone()\n        labels_tmp[labels_tmp==(-100)] = 0\n        one_hot = torch.nn.functional.one_hot(labels_tmp, num_classes=self.config.vocab_size).to(logits.dtype)\n        stable_onehot = (one_hot+1e-15) / torch.linalg.vector_norm((one_hot+1e-15), ord=1, dim=-1, keepdim=True) # (bsz*seq_len, vocab_size)\n        embedding_matrix = self.cost_embedding # (vocab_size, hidden_size)\n        embedding_matrix = embedding_matrix / torch.linalg.vector_norm(embedding_matrix, ord=2, dim=1, keepdim=True)\n        p_contextual_repr = stable_onehot @ embedding_matrix.detach() # (bsz*seq_len, hidden_size)\n        q_grad = torch.log_softmax(logits, dim=-1).exp() # (bsz*seq_len, vocab_size)\n        gt_q = (q_grad * one_hot).detach()\n        q_final = q_grad - gt_q\n        q_contextual_repr = q_final @ embedding_matrix.detach() # (bsz*seq_len, hidden_size)\n        emo_loss = (1 - torch.sum(p_contextual_repr*q_contextual_repr, dim=-1)) # (bsz*seq_len,)\n\n        # ======================================================================== #\n        #                   Compose the final loss\n        # ======================================================================== #\n        loss = (emo_loss / (mle_loss+1e-10)).detach()*mle_loss + emo_loss\n        loss = (loss * mask).sum() / (1e-15 + mask.sum())\n\n        output = (logits,) + outputs[1:]\n        return (loss,) + output if loss is not None else output",
+    "experimental_info": "The EMO method is implemented with two main model classes, `EMOLlamaForCausalLM` and `EMOLlama2ForCausalLM`, which dynamically combine Maximum Likelihood Estimation (MLE) loss and Earth Mover Distance (EMD) loss (referred to as EMO loss). For `EMOLlamaForCausalLM`, the final loss composition is `((torch.min((mle_loss / (emo_loss+1e-10)).detach(), torch.ones_like(mle_loss, dtype=mle_loss.dtype, device=mle_loss.device)*3.0) * emo_loss + mle_loss) * 0.5)`. For `EMOLlama2ForCausalLM`, the composition is `((emo_loss / (mle_loss+1e-10)).detach()*mle_loss + emo_loss)`. The `emo_loss` itself is calculated based on the cosine distance between token embeddings, with `p_contextual_repr` from one-hot labels and `q_contextual_repr` from model logits, using a `cost_embedding` matrix.\n\nKey experimental settings include:\n- **Cost Embedding Initialization**: The `cost_embedding` matrix, central to the EMO loss, is typically initialized from a pre-trained language model's `lm_head.weight.data`. For example, in `continual_finetuning/run_clm_trainer_emo.py`, it's explicitly loaded from a Llama-2-13B model's `lm_head`. In other cases (e.g., `run_clm_trainer_emo_fsdp.py` and `instruction_tuning/train.py`), it's initialized as a deep copy of the current model's `lm_head.weight.data` and registered as a buffer.\n- **Loss Reduction**: The final combined loss is typically reduced by taking the mean (`model.config.reduction = 'mean'`).\n- **Efficient Training**: Flash Attention is integrated by replacing the Llama attention mechanism (`replace_llama_attn_with_flash_attn()`). LoRA (Low-Rank Adaptation) for efficient fine-tuning is optionally used, with a configuration of `r=32`, `lora_alpha=16`, `lora_dropout=0.05`, `bias=\"none\"`, and `task_type=\"CAUSAL_LM\"`.\n- **Tokenizer Settings**: For Llama models, `tokenizer.pad_token_id` is set to `0` and `tokenizer.padding_side` to `\"left\"`."
+}
