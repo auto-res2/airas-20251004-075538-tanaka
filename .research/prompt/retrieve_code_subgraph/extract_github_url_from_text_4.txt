@@ -1,0 +1,17 @@
+
+Input:
+# Task
+You carefully read the contents of the “Paper Outline” and select one GitHub link from the “GitHub URLs List” that you think is most relevant to the contents.
+# Constraints
+- Output the index number corresponding to the selected GitHub URL.
+- Be sure to select only one GitHub URL.
+- If there is no related GitHub link, output None.
+# Paper Outline
+The proposed RA-RLHF algorithm adapts the standard Reinforcement Learning from Human Feedback (RLHF) pipeline by optimizing the Conditional Value at Risk (CVaR) of the return, rather than the expected value. It incorporates a soft-risk scheduling mechanism with two key elements: (1) an initial training phase (i0 iterations) that utilizes the full data batch and a supervised fine-tuned (SFT) baseline model to ensure recognition of positive episodes and general task performance, and (2) a gradual reduction in batch size (B0) based on the risk target (α) to focus on challenging, worst-case episodes with the lowest returns. The policy update leverages Proximal Policy Optimization (PPO) in an Actor-Critic setup, using a modified dense reward function that combines the environment reward with a KL-Divergence regularization term against a reference SFT policy. The β parameter for KL regularization is dynamically adjusted using a log-space proportional controller.
+
+# GitHub URLs List
+['https://github.com/SapanaChaudhary/RA-RLHF', 'https://github.com/huggingface/trl', 'https://github.com/huggingface/evaluate']
+Output:
+{
+    "index": 0
+}
