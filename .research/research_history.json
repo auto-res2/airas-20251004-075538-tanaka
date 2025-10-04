@@ -680,7 +680,931 @@
         "CNN/DailyMail",
         "SST-2",
         "XSum"
-      ]
+      ],
+      "external_resources": {
+        "hugging_face": {
+          "models": [
+            {
+              "id": "facebook/bart-base",
+              "author": "facebook",
+              "sha": "aadd2ab0ae0c8268c7c9693540e9904811f36177",
+              "created_at": "2022-03-02T23:29:05+00:00",
+              "last_modified": "2022-11-16T23:23:10+00:00",
+              "private": false,
+              "gated": false,
+              "disabled": false,
+              "downloads": 4837121,
+              "likes": 199,
+              "siblings": [
+                {
+                  "rfilename": ".gitattributes"
+                },
+                {
+                  "rfilename": "README.md"
+                },
+                {
+                  "rfilename": "config.json"
+                },
+                {
+                  "rfilename": "flax_model.msgpack"
+                },
+                {
+                  "rfilename": "merges.txt"
+                },
+                {
+                  "rfilename": "model.safetensors"
+                },
+                {
+                  "rfilename": "pytorch_model.bin"
+                },
+                {
+                  "rfilename": "tf_model.h5"
+                },
+                {
+                  "rfilename": "tokenizer.json"
+                },
+                {
+                  "rfilename": "vocab.json"
+                }
+              ],
+              "card_data": {
+                "license": "apache-2.0",
+                "language": "en",
+                "tags": [],
+                "datasets": [],
+                "task_categories": [],
+                "size_categories": [],
+                "metrics": [],
+                "widget": []
+              },
+              "tags": [
+                "transformers",
+                "pytorch",
+                "tf",
+                "jax",
+                "safetensors",
+                "bart",
+                "feature-extraction",
+                "en",
+                "arxiv:1910.13461",
+                "license:apache-2.0",
+                "endpoints_compatible",
+                "region:us"
+              ],
+              "pipeline_tag": "feature-extraction",
+              "library_name": "transformers",
+              "readme": "---\nlicense: apache-2.0\nlanguage: en\n---\n\n# BART (base-sized model) \n\nBART model pre-trained on English language. It was introduced in the paper [BART: Denoising Sequence-to-Sequence Pre-training for Natural Language Generation, Translation, and Comprehension](https://arxiv.org/abs/1910.13461) by Lewis et al. and first released in [this repository](https://github.com/pytorch/fairseq/tree/master/examples/bart). \n\nDisclaimer: The team releasing BART did not write a model card for this model so this model card has been written by the Hugging Face team.\n\n## Model description\n\nBART is a transformer encoder-decoder (seq2seq) model with a bidirectional (BERT-like) encoder and an autoregressive (GPT-like) decoder. BART is pre-trained by (1) corrupting text with an arbitrary noising function, and (2) learning a model to reconstruct the original text.\n\nBART is particularly effective when fine-tuned for text generation (e.g. summarization, translation) but also works well for comprehension tasks (e.g. text classification, question answering).\n\n## Intended uses & limitations\n\nYou can use the raw model for text infilling. However, the model is mostly meant to be fine-tuned on a supervised dataset. See the [model hub](https://huggingface.co/models?search=bart) to look for fine-tuned versions on a task that interests you.\n\n### How to use\n\nHere is how to use this model in PyTorch:\n\n```python\nfrom transformers import BartTokenizer, BartModel\n\ntokenizer = BartTokenizer.from_pretrained('facebook/bart-base')\nmodel = BartModel.from_pretrained('facebook/bart-base')\n\ninputs = tokenizer(\"Hello, my dog is cute\", return_tensors=\"pt\")\noutputs = model(**inputs)\n\nlast_hidden_states = outputs.last_hidden_state\n```\n\n### BibTeX entry and citation info\n\n```bibtex\n@article{DBLP:journals/corr/abs-1910-13461,\n  author    = {Mike Lewis and\n               Yinhan Liu and\n               Naman Goyal and\n               Marjan Ghazvininejad and\n               Abdelrahman Mohamed and\n               Omer Levy and\n               Veselin Stoyanov and\n               Luke Zettlemoyer},\n  title     = {{BART:} Denoising Sequence-to-Sequence Pre-training for Natural Language\n               Generation, Translation, and Comprehension},\n  journal   = {CoRR},\n  volume    = {abs/1910.13461},\n  year      = {2019},\n  url       = {http://arxiv.org/abs/1910.13461},\n  eprinttype = {arXiv},\n  eprint    = {1910.13461},\n  timestamp = {Thu, 31 Oct 2019 14:02:26 +0100},\n  biburl    = {https://dblp.org/rec/journals/corr/abs-1910-13461.bib},\n  bibsource = {dblp computer science bibliography, https://dblp.org}\n}\n```",
+              "extracted_code": "from transformers import BartTokenizer, BartModel\n\ntokenizer = BartTokenizer.from_pretrained('facebook/bart-base')\nmodel = BartModel.from_pretrained('facebook/bart-base')\n\ninputs = tokenizer(\"Hello, my dog is cute\", return_tensors=\"pt\")\noutputs = model(**inputs)\n\nlast_hidden_states = outputs.last_hidden_state"
+            },
+            {
+              "id": "FacebookAI/roberta-base",
+              "author": "FacebookAI",
+              "sha": "e2da8e2f811d1448a5b465c236feacd80ffbac7b",
+              "created_at": "2022-03-02T23:29:04+00:00",
+              "last_modified": "2024-02-19T12:39:28+00:00",
+              "private": false,
+              "gated": false,
+              "disabled": false,
+              "downloads": 12035497,
+              "likes": 529,
+              "siblings": [
+                {
+                  "rfilename": ".gitattributes"
+                },
+                {
+                  "rfilename": "README.md"
+                },
+                {
+                  "rfilename": "config.json"
+                },
+                {
+                  "rfilename": "dict.txt"
+                },
+                {
+                  "rfilename": "flax_model.msgpack"
+                },
+                {
+                  "rfilename": "merges.txt"
+                },
+                {
+                  "rfilename": "model.safetensors"
+                },
+                {
+                  "rfilename": "pytorch_model.bin"
+                },
+                {
+                  "rfilename": "rust_model.ot"
+                },
+                {
+                  "rfilename": "tf_model.h5"
+                }
+              ],
+              "card_data": {
+                "license": "mit",
+                "language": "en",
+                "tags": [
+                  "exbert"
+                ],
+                "datasets": [
+                  "bookcorpus",
+                  "wikipedia"
+                ],
+                "task_categories": [],
+                "size_categories": [],
+                "metrics": [],
+                "widget": []
+              },
+              "tags": [
+                "transformers",
+                "pytorch",
+                "tf",
+                "jax",
+                "rust",
+                "safetensors",
+                "roberta",
+                "fill-mask",
+                "exbert",
+                "en",
+                "dataset:bookcorpus",
+                "dataset:wikipedia",
+                "arxiv:1907.11692",
+                "arxiv:1806.02847",
+                "license:mit",
+                "autotrain_compatible",
+                "endpoints_compatible",
+                "region:us"
+              ],
+              "pipeline_tag": "fill-mask",
+              "library_name": "transformers",
+              "readme": "---\nlanguage: en\ntags:\n- exbert\nlicense: mit\ndatasets:\n- bookcorpus\n- wikipedia\n---\n\n# RoBERTa base model\n\nPretrained model on English language using a masked language modeling (MLM) objective. It was introduced in\n[this paper](https://arxiv.org/abs/1907.11692) and first released in\n[this repository](https://github.com/pytorch/fairseq/tree/master/examples/roberta). This model is case-sensitive: it\nmakes a difference between english and English.\n\nDisclaimer: The team releasing RoBERTa did not write a model card for this model so this model card has been written by\nthe Hugging Face team.\n\n## Model description\n\nRoBERTa is a transformers model pretrained on a large corpus of English data in a self-supervised fashion. This means\nit was pretrained on the raw texts only, with no humans labelling them in any way (which is why it can use lots of\npublicly available data) with an automatic process to generate inputs and labels from those texts. \n\nMore precisely, it was pretrained with the Masked language modeling (MLM) objective. Taking a sentence, the model\nrandomly masks 15% of the words in the input then run the entire masked sentence through the model and has to predict\nthe masked words. This is different from traditional recurrent neural networks (RNNs) that usually see the words one\nafter the other, or from autoregressive models like GPT which internally mask the future tokens. It allows the model to\nlearn a bidirectional representation of the sentence.\n\nThis way, the model learns an inner representation of the English language that can then be used to extract features\nuseful for downstream tasks: if you have a dataset of labeled sentences for instance, you can train a standard\nclassifier using the features produced by the BERT model as inputs.\n\n## Intended uses & limitations\n\nYou can use the raw model for masked language modeling, but it's mostly intended to be fine-tuned on a downstream task.\nSee the [model hub](https://huggingface.co/models?filter=roberta) to look for fine-tuned versions on a task that\ninterests you.\n\nNote that this model is primarily aimed at being fine-tuned on tasks that use the whole sentence (potentially masked)\nto make decisions, such as sequence classification, token classification or question answering. For tasks such as text\ngeneration you should look at a model like GPT2.\n\n### How to use\n\nYou can use this model directly with a pipeline for masked language modeling:\n\n```python\n>>> from transformers import pipeline\n>>> unmasker = pipeline('fill-mask', model='roberta-base')\n>>> unmasker(\"Hello I'm a <mask> model.\")\n\n[{'sequence': \"<s>Hello I'm a male model.</s>\",\n  'score': 0.3306540250778198,\n  'token': 2943,\n  'token_str': 'Ġmale'},\n {'sequence': \"<s>Hello I'm a female model.</s>\",\n  'score': 0.04655390977859497,\n  'token': 2182,\n  'token_str': 'Ġfemale'},\n {'sequence': \"<s>Hello I'm a professional model.</s>\",\n  'score': 0.04232972860336304,\n  'token': 2038,\n  'token_str': 'Ġprofessional'},\n {'sequence': \"<s>Hello I'm a fashion model.</s>\",\n  'score': 0.037216778844594955,\n  'token': 2734,\n  'token_str': 'Ġfashion'},\n {'sequence': \"<s>Hello I'm a Russian model.</s>\",\n  'score': 0.03253649175167084,\n  'token': 1083,\n  'token_str': 'ĠRussian'}]\n```\n\nHere is how to use this model to get the features of a given text in PyTorch:\n\n```python\nfrom transformers import RobertaTokenizer, RobertaModel\ntokenizer = RobertaTokenizer.from_pretrained('roberta-base')\nmodel = RobertaModel.from_pretrained('roberta-base')\ntext = \"Replace me by any text you'd like.\"\nencoded_input = tokenizer(text, return_tensors='pt')\noutput = model(**encoded_input)\n```\n\nand in TensorFlow:\n\n```python\nfrom transformers import RobertaTokenizer, TFRobertaModel\ntokenizer = RobertaTokenizer.from_pretrained('roberta-base')\nmodel = TFRobertaModel.from_pretrained('roberta-base')\ntext = \"Replace me by any text you'd like.\"\nencoded_input = tokenizer(text, return_tensors='tf')\noutput = model(encoded_input)\n```\n\n### Limitations and bias\n\nThe training data used for this model contains a lot of unfiltered content from the internet, which is far from\nneutral. Therefore, the model can have biased predictions:\n\n```python\n>>> from transformers import pipeline\n>>> unmasker = pipeline('fill-mask', model='roberta-base')\n>>> unmasker(\"The man worked as a <mask>.\")\n\n[{'sequence': '<s>The man worked as a mechanic.</s>',\n  'score': 0.08702439814805984,\n  'token': 25682,\n  'token_str': 'Ġmechanic'},\n {'sequence': '<s>The man worked as a waiter.</s>',\n  'score': 0.0819653645157814,\n  'token': 38233,\n  'token_str': 'Ġwaiter'},\n {'sequence': '<s>The man worked as a butcher.</s>',\n  'score': 0.073323555290699,\n  'token': 32364,\n  'token_str': 'Ġbutcher'},\n {'sequence': '<s>The man worked as a miner.</s>',\n  'score': 0.046322137117385864,\n  'token': 18678,\n  'token_str': 'Ġminer'},\n {'sequence': '<s>The man worked as a guard.</s>',\n  'score': 0.040150221437215805,\n  'token': 2510,\n  'token_str': 'Ġguard'}]\n\n>>> unmasker(\"The Black woman worked as a <mask>.\")\n\n[{'sequence': '<s>The Black woman worked as a waitress.</s>',\n  'score': 0.22177888453006744,\n  'token': 35698,\n  'token_str': 'Ġwaitress'},\n {'sequence': '<s>The Black woman worked as a prostitute.</s>',\n  'score': 0.19288744032382965,\n  'token': 36289,\n  'token_str': 'Ġprostitute'},\n {'sequence': '<s>The Black woman worked as a maid.</s>',\n  'score': 0.06498628109693527,\n  'token': 29754,\n  'token_str': 'Ġmaid'},\n {'sequence': '<s>The Black woman worked as a secretary.</s>',\n  'score': 0.05375480651855469,\n  'token': 2971,\n  'token_str': 'Ġsecretary'},\n {'sequence': '<s>The Black woman worked as a nurse.</s>',\n  'score': 0.05245552211999893,\n  'token': 9008,\n  'token_str': 'Ġnurse'}]\n```\n\nThis bias will also affect all fine-tuned versions of this model.\n\n## Training data\n\nThe RoBERTa model was pretrained on the reunion of five datasets:\n- [BookCorpus](https://yknzhu.wixsite.com/mbweb), a dataset consisting of 11,038 unpublished books;\n- [English Wikipedia](https://en.wikipedia.org/wiki/English_Wikipedia) (excluding lists, tables and headers) ;\n- [CC-News](https://commoncrawl.org/2016/10/news-dataset-available/), a dataset containing 63 millions English news\n  articles crawled between September 2016 and February 2019.\n- [OpenWebText](https://github.com/jcpeterson/openwebtext), an opensource recreation of the WebText dataset used to\n  train GPT-2,\n- [Stories](https://arxiv.org/abs/1806.02847) a dataset containing a subset of CommonCrawl data filtered to match the\n  story-like style of Winograd schemas.\n\nTogether these datasets weigh 160GB of text.\n\n## Training procedure\n\n### Preprocessing\n\nThe texts are tokenized using a byte version of Byte-Pair Encoding (BPE) and a vocabulary size of 50,000. The inputs of\nthe model take pieces of 512 contiguous tokens that may span over documents. The beginning of a new document is marked\nwith `<s>` and the end of one by `</s>`\n\nThe details of the masking procedure for each sentence are the following:\n- 15% of the tokens are masked.\n- In 80% of the cases, the masked tokens are replaced by `<mask>`.\n- In 10% of the cases, the masked tokens are replaced by a random token (different) from the one they replace.\n- In the 10% remaining cases, the masked tokens are left as is.\n\nContrary to BERT, the masking is done dynamically during pretraining (e.g., it changes at each epoch and is not fixed).\n\n### Pretraining\n\nThe model was trained on 1024 V100 GPUs for 500K steps with a batch size of 8K and a sequence length of 512. The\noptimizer used is Adam with a learning rate of 6e-4, \\\\(\\beta_{1} = 0.9\\\\), \\\\(\\beta_{2} = 0.98\\\\) and\n\\\\(\\epsilon = 1e-6\\\\), a weight decay of 0.01, learning rate warmup for 24,000 steps and linear decay of the learning\nrate after.\n\n## Evaluation results\n\nWhen fine-tuned on downstream tasks, this model achieves the following results:\n\nGlue test results:\n\n| Task | MNLI | QQP  | QNLI | SST-2 | CoLA | STS-B | MRPC | RTE  |\n|:----:|:----:|:----:|:----:|:-----:|:----:|:-----:|:----:|:----:|\n|      | 87.6 | 91.9 | 92.8 | 94.8  | 63.6 | 91.2  | 90.2 | 78.7 |\n\n\n### BibTeX entry and citation info\n\n```bibtex\n@article{DBLP:journals/corr/abs-1907-11692,\n  author    = {Yinhan Liu and\n               Myle Ott and\n               Naman Goyal and\n               Jingfei Du and\n               Mandar Joshi and\n               Danqi Chen and\n               Omer Levy and\n               Mike Lewis and\n               Luke Zettlemoyer and\n               Veselin Stoyanov},\n  title     = {RoBERTa: {A} Robustly Optimized {BERT} Pretraining Approach},\n  journal   = {CoRR},\n  volume    = {abs/1907.11692},\n  year      = {2019},\n  url       = {http://arxiv.org/abs/1907.11692},\n  archivePrefix = {arXiv},\n  eprint    = {1907.11692},\n  timestamp = {Thu, 01 Aug 2019 08:59:33 +0200},\n  biburl    = {https://dblp.org/rec/journals/corr/abs-1907-11692.bib},\n  bibsource = {dblp computer science bibliography, https://dblp.org}\n}\n```\n\n<a href=\"https://huggingface.co/exbert/?model=roberta-base\">\n\t<img width=\"300px\" src=\"https://cdn-media.huggingface.co/exbert/button.png\">\n</a>\n",
+              "extracted_code": "from transformers import pipeline\nunmasker = pipeline('fill-mask', model='roberta-base')\nunmasker(\"Hello I'm a <mask> model.\")\n\nfrom transformers import RobertaTokenizer, RobertaModel\ntokenizer = RobertaTokenizer.from_pretrained('roberta-base')\nmodel = RobertaModel.from_pretrained('roberta-base')\ntext = \"Replace me by any text you'd like.\"\nencoded_input = tokenizer(text, return_tensors='pt')\noutput = model(**encoded_input)\n\nfrom transformers import RobertaTokenizer, TFRobertaModel\ntokenizer = RobertaTokenizer.from_pretrained('roberta-base')\nmodel = TFRobertaModel.from_pretrained('roberta-base')\ntext = \"Replace me by any text you'd like.\"\nencoded_input = tokenizer(text, return_tensors='tf')\noutput = model(encoded_input)\n\nfrom transformers import pipeline\nunmasker = pipeline('fill-mask', model='roberta-base')\nunmasker(\"The man worked as a <mask>.\")\nunmasker(\"The Black woman worked as a <mask>.\")"
+            },
+            {
+              "id": "FacebookAI/xlm-roberta-base",
+              "author": "FacebookAI",
+              "sha": "e73636d4f797dec63c3081bb6ed5c7b0bb3f2089",
+              "created_at": "2022-03-02T23:29:04+00:00",
+              "last_modified": "2024-02-19T12:48:21+00:00",
+              "private": false,
+              "gated": false,
+              "disabled": false,
+              "downloads": 7483442,
+              "likes": 734,
+              "siblings": [
+                {
+                  "rfilename": ".gitattributes"
+                },
+                {
+                  "rfilename": "README.md"
+                },
+                {
+                  "rfilename": "config.json"
+                },
+                {
+                  "rfilename": "flax_model.msgpack"
+                },
+                {
+                  "rfilename": "model.onnx"
+                },
+                {
+                  "rfilename": "model.safetensors"
+                },
+                {
+                  "rfilename": "pytorch_model.bin"
+                },
+                {
+                  "rfilename": "sentencepiece.bpe.model"
+                },
+                {
+                  "rfilename": "tf_model.h5"
+                },
+                {
+                  "rfilename": "tokenizer.json"
+                }
+              ],
+              "card_data": {
+                "license": "mit",
+                "language": [
+                  "multilingual",
+                  "af",
+                  "am",
+                  "ar",
+                  "as",
+                  "az",
+                  "be",
+                  "bg",
+                  "bn",
+                  "br",
+                  "bs",
+                  "ca",
+                  "cs",
+                  "cy",
+                  "da",
+                  "de",
+                  "el",
+                  "en",
+                  "eo",
+                  "es",
+                  "et",
+                  "eu",
+                  "fa",
+                  "fi",
+                  "fr",
+                  "fy",
+                  "ga",
+                  "gd",
+                  "gl",
+                  "gu",
+                  "ha",
+                  "he",
+                  "hi",
+                  "hr",
+                  "hu",
+                  "hy",
+                  "id",
+                  "is",
+                  "it",
+                  "ja",
+                  "jv",
+                  "ka",
+                  "kk",
+                  "km",
+                  "kn",
+                  "ko",
+                  "ku",
+                  "ky",
+                  "la",
+                  "lo",
+                  "lt",
+                  "lv",
+                  "mg",
+                  "mk",
+                  "ml",
+                  "mn",
+                  "mr",
+                  "ms",
+                  "my",
+                  "ne",
+                  "nl",
+                  "no",
+                  "om",
+                  "or",
+                  "pa",
+                  "pl",
+                  "ps",
+                  "pt",
+                  "ro",
+                  "ru",
+                  "sa",
+                  "sd",
+                  "si",
+                  "sk",
+                  "sl",
+                  "so",
+                  "sq",
+                  "sr",
+                  "su",
+                  "sv",
+                  "sw",
+                  "ta",
+                  "te",
+                  "th",
+                  "tl",
+                  "tr",
+                  "ug",
+                  "uk",
+                  "ur",
+                  "uz",
+                  "vi",
+                  "xh",
+                  "yi",
+                  "zh"
+                ],
+                "tags": [
+                  "exbert"
+                ],
+                "datasets": [],
+                "task_categories": [],
+                "size_categories": [],
+                "metrics": [],
+                "widget": []
+              },
+              "tags": [
+                "transformers",
+                "pytorch",
+                "tf",
+                "jax",
+                "onnx",
+                "safetensors",
+                "xlm-roberta",
+                "fill-mask",
+                "exbert",
+                "multilingual",
+                "af",
+                "am",
+                "ar",
+                "as",
+                "az",
+                "be",
+                "bg",
+                "bn",
+                "br",
+                "bs",
+                "ca",
+                "cs",
+                "cy",
+                "da",
+                "de",
+                "el",
+                "en",
+                "eo",
+                "es",
+                "et",
+                "eu",
+                "fa",
+                "fi",
+                "fr",
+                "fy",
+                "ga",
+                "gd",
+                "gl",
+                "gu",
+                "ha",
+                "he",
+                "hi",
+                "hr",
+                "hu",
+                "hy",
+                "id",
+                "is",
+                "it",
+                "ja",
+                "jv",
+                "ka",
+                "kk",
+                "km",
+                "kn",
+                "ko",
+                "ku",
+                "ky",
+                "la",
+                "lo",
+                "lt",
+                "lv",
+                "mg",
+                "mk",
+                "ml",
+                "mn",
+                "mr",
+                "ms",
+                "my",
+                "ne",
+                "nl",
+                "no",
+                "om",
+                "or",
+                "pa",
+                "pl",
+                "ps",
+                "pt",
+                "ro",
+                "ru",
+                "sa",
+                "sd",
+                "si",
+                "sk",
+                "sl",
+                "so",
+                "sq",
+                "sr",
+                "su",
+                "sv",
+                "sw",
+                "ta",
+                "te",
+                "th",
+                "tl",
+                "tr",
+                "ug",
+                "uk",
+                "ur",
+                "uz",
+                "vi",
+                "xh",
+                "yi",
+                "zh",
+                "arxiv:1911.02116",
+                "license:mit",
+                "autotrain_compatible",
+                "endpoints_compatible",
+                "region:us"
+              ],
+              "pipeline_tag": "fill-mask",
+              "library_name": "transformers",
+              "readme": "---\ntags:\n- exbert\nlanguage: \n- multilingual\n- af\n- am\n- ar\n- as\n- az\n- be\n- bg\n- bn\n- br\n- bs\n- ca\n- cs\n- cy\n- da\n- de\n- el\n- en\n- eo\n- es\n- et\n- eu\n- fa\n- fi\n- fr\n- fy\n- ga\n- gd\n- gl\n- gu\n- ha\n- he\n- hi\n- hr\n- hu\n- hy\n- id\n- is\n- it\n- ja\n- jv\n- ka\n- kk\n- km\n- kn\n- ko\n- ku\n- ky\n- la\n- lo\n- lt\n- lv\n- mg\n- mk\n- ml\n- mn\n- mr\n- ms\n- my\n- ne\n- nl\n- no\n- om\n- or\n- pa\n- pl\n- ps\n- pt\n- ro\n- ru\n- sa\n- sd\n- si\n- sk\n- sl\n- so\n- sq\n- sr\n- su\n- sv\n- sw\n- ta\n- te\n- th\n- tl\n- tr\n- ug\n- uk\n- ur\n- uz\n- vi\n- xh\n- yi\n- zh\nlicense: mit\n---\n\n# XLM-RoBERTa (base-sized model) \n\nXLM-RoBERTa model pre-trained on 2.5TB of filtered CommonCrawl data containing 100 languages. It was introduced in the paper [Unsupervised Cross-lingual Representation Learning at Scale](https://arxiv.org/abs/1911.02116) by Conneau et al. and first released in [this repository](https://github.com/pytorch/fairseq/tree/master/examples/xlmr). \n\nDisclaimer: The team releasing XLM-RoBERTa did not write a model card for this model so this model card has been written by the Hugging Face team.\n\n## Model description\n\nXLM-RoBERTa is a multilingual version of RoBERTa. It is pre-trained on 2.5TB of filtered CommonCrawl data containing 100 languages. \n\nRoBERTa is a transformers model pretrained on a large corpus in a self-supervised fashion. This means it was pretrained on the raw texts only, with no humans labelling them in any way (which is why it can use lots of publicly available data) with an automatic process to generate inputs and labels from those texts.\n\nMore precisely, it was pretrained with the Masked language modeling (MLM) objective. Taking a sentence, the model randomly masks 15% of the words in the input then run the entire masked sentence through the model and has to predict the masked words. This is different from traditional recurrent neural networks (RNNs) that usually see the words one after the other, or from autoregressive models like GPT which internally mask the future tokens. It allows the model to learn a bidirectional representation of the sentence.\n\nThis way, the model learns an inner representation of 100 languages that can then be used to extract features useful for downstream tasks: if you have a dataset of labeled sentences for instance, you can train a standard classifier using the features produced by the XLM-RoBERTa model as inputs.\n\n## Intended uses & limitations\n\nYou can use the raw model for masked language modeling, but it's mostly intended to be fine-tuned on a downstream task. See the [model hub](https://huggingface.co/models?search=xlm-roberta) to look for fine-tuned versions on a task that interests you.\n\nNote that this model is primarily aimed at being fine-tuned on tasks that use the whole sentence (potentially masked) to make decisions, such as sequence classification, token classification or question answering. For tasks such as text generation, you should look at models like GPT2.\n\n## Usage\n\nYou can use this model directly with a pipeline for masked language modeling:\n\n```python\n>>> from transformers import pipeline\n>>> unmasker = pipeline('fill-mask', model='xlm-roberta-base')\n>>> unmasker(\"Hello I'm a <mask> model.\")\n\n[{'score': 0.10563907772302628,\n  'sequence': \"Hello I'm a fashion model.\",\n  'token': 54543,\n  'token_str': 'fashion'},\n {'score': 0.08015287667512894,\n  'sequence': \"Hello I'm a new model.\",\n  'token': 3525,\n  'token_str': 'new'},\n {'score': 0.033413201570510864,\n  'sequence': \"Hello I'm a model model.\",\n  'token': 3299,\n  'token_str': 'model'},\n {'score': 0.030217764899134636,\n  'sequence': \"Hello I'm a French model.\",\n  'token': 92265,\n  'token_str': 'French'},\n {'score': 0.026436051353812218,\n  'sequence': \"Hello I'm a sexy model.\",\n  'token': 17473,\n  'token_str': 'sexy'}]\n```\n\nHere is how to use this model to get the features of a given text in PyTorch:\n\n```python\nfrom transformers import AutoTokenizer, AutoModelForMaskedLM\n\ntokenizer = AutoTokenizer.from_pretrained('xlm-roberta-base')\nmodel = AutoModelForMaskedLM.from_pretrained(\"xlm-roberta-base\")\n\n# prepare input\ntext = \"Replace me by any text you'd like.\"\nencoded_input = tokenizer(text, return_tensors='pt')\n\n# forward pass\noutput = model(**encoded_input)\n```\n\n### BibTeX entry and citation info\n\n```bibtex\n@article{DBLP:journals/corr/abs-1911-02116,\n  author    = {Alexis Conneau and\n               Kartikay Khandelwal and\n               Naman Goyal and\n               Vishrav Chaudhary and\n               Guillaume Wenzek and\n               Francisco Guzm{\\'{a}}n and\n               Edouard Grave and\n               Myle Ott and\n               Luke Zettlemoyer and\n               Veselin Stoyanov},\n  title     = {Unsupervised Cross-lingual Representation Learning at Scale},\n  journal   = {CoRR},\n  volume    = {abs/1911.02116},\n  year      = {2019},\n  url       = {http://arxiv.org/abs/1911.02116},\n  eprinttype = {arXiv},\n  eprint    = {1911.02116},\n  timestamp = {Mon, 11 Nov 2019 18:38:09 +0100},\n  biburl    = {https://dblp.org/rec/journals/corr/abs-1911-02116.bib},\n  bibsource = {dblp computer science bibliography, https://dblp.org}\n}\n```\n\n<a href=\"https://huggingface.co/exbert/?model=xlm-roberta-base\">\n\t<img width=\"300px\" src=\"https://cdn-media.huggingface.co/exbert/button.png\">\n</a>\n",
+              "extracted_code": "from transformers import pipeline\nunmasker = pipeline('fill-mask', model='xlm-roberta-base')\nunmasker(\"Hello I'm a <mask> model.\")\n\nfrom transformers import AutoTokenizer, AutoModelForMaskedLM\n\ntokenizer = AutoTokenizer.from_pretrained('xlm-roberta-base')\nmodel = AutoModelForMaskedLM.from_pretrained(\"xlm-roberta-base\")\n\ntext = \"Replace me by any text you'd like.\"\nencoded_input = tokenizer(text, return_tensors='pt')\noutput = model(**encoded_input)"
+            }
+          ],
+          "datasets": [
+            {
+              "id": "Yujivus/wmt14-de-en-collated-128",
+              "author": "Yujivus",
+              "sha": "22a7fc493d19ad18049d15a9e59368a460d1da83",
+              "created_at": "2025-09-23T13:21:44+00:00",
+              "last_modified": "2025-09-23T13:24:43+00:00",
+              "private": false,
+              "gated": false,
+              "disabled": false,
+              "downloads": 139,
+              "likes": 0,
+              "siblings": [
+                {
+                  "rfilename": ".gitattributes"
+                },
+                {
+                  "rfilename": "README.md"
+                },
+                {
+                  "rfilename": "data/test-00000-of-00001.parquet"
+                },
+                {
+                  "rfilename": "data/train-00000-of-00016.parquet"
+                },
+                {
+                  "rfilename": "data/train-00001-of-00016.parquet"
+                },
+                {
+                  "rfilename": "data/train-00002-of-00016.parquet"
+                },
+                {
+                  "rfilename": "data/train-00003-of-00016.parquet"
+                },
+                {
+                  "rfilename": "data/train-00004-of-00016.parquet"
+                },
+                {
+                  "rfilename": "data/train-00005-of-00016.parquet"
+                },
+                {
+                  "rfilename": "data/train-00006-of-00016.parquet"
+                }
+              ],
+              "card_data": {
+                "language": [],
+                "tags": [],
+                "datasets": [],
+                "task_categories": [],
+                "size_categories": [],
+                "metrics": [],
+                "widget": []
+              },
+              "tags": [
+                "size_categories:1M<n<10M",
+                "format:parquet",
+                "modality:tabular",
+                "library:datasets",
+                "library:dask",
+                "library:mlcroissant",
+                "library:polars",
+                "region:us"
+              ],
+              "readme": "---\ndataset_info:\n  features:\n  - name: input_ids\n    list: int32\n  - name: attention_mask\n    list: int8\n  - name: labels\n    list: int64\n  - name: input_length\n    dtype: int64\n  - name: labels_length\n    dtype: int64\n  splits:\n  - name: train\n    num_bytes: 7596472572\n    num_examples: 4489641\n  - name: validation\n    num_bytes: 5067540\n    num_examples: 2995\n  - name: test\n    num_bytes: 5081076\n    num_examples: 3003\n  download_size: 716035941\n  dataset_size: 7606621188\nconfigs:\n- config_name: default\n  data_files:\n  - split: train\n    path: data/train-*\n  - split: validation\n    path: data/validation-*\n  - split: test\n    path: data/test-*\n---\n",
+              "extracted_code": ""
+            },
+            {
+              "id": "stas/wmt14-en-de-pre-processed",
+              "author": "stas",
+              "sha": "7617090058992d01345cbead219b800acd77d3ac",
+              "created_at": "2022-03-02T23:29:22+00:00",
+              "last_modified": "2021-02-16T04:41:04+00:00",
+              "private": false,
+              "gated": false,
+              "disabled": false,
+              "downloads": 76,
+              "likes": 3,
+              "siblings": [
+                {
+                  "rfilename": ".gitattributes"
+                },
+                {
+                  "rfilename": "README.md"
+                },
+                {
+                  "rfilename": "dataset_infos.json"
+                },
+                {
+                  "rfilename": "process.txt"
+                },
+                {
+                  "rfilename": "wmt14-en-de-pre-processed.py"
+                }
+              ],
+              "tags": [
+                "size_categories:1M<n<10M",
+                "modality:text",
+                "library:datasets",
+                "library:mlcroissant",
+                "region:us"
+              ],
+              "readme": "# WMT14 English-German Translation Data w/ further preprocessing\n\nThe original pre-processing script is [here](https://github.com/pytorch/fairseq/blob/master/examples/translation/prepare-wmt14en2de.sh).\n\nThis pre-processed dataset was created by running:\n\n```\ngit clone https://github.com/pytorch/fairseq\ncd fairseq\ncd examples/translation/\n./prepare-wmt14en2de.sh\n```\n\nIt was originally used by  `transformers` [`finetune_trainer.py`](https://github.com/huggingface/transformers/blob/641f418e102218c4bf16fcd3124bfebed6217ef6/examples/seq2seq/finetune_trainer.py)\n\nThe data itself resides at https://cdn-datasets.huggingface.co/translation/wmt_en_de.tgz\n",
+              "extracted_code": ""
+            },
+            {
+              "id": "Tohrumi/iwslt15_en-vi_10k",
+              "author": "Tohrumi",
+              "sha": "427387482a93ccd6c278204dec65c34badd4c7dc",
+              "created_at": "2024-06-18T13:53:12+00:00",
+              "last_modified": "2024-06-18T13:53:14+00:00",
+              "private": false,
+              "gated": false,
+              "disabled": false,
+              "downloads": 22,
+              "likes": 0,
+              "siblings": [
+                {
+                  "rfilename": ".gitattributes"
+                },
+                {
+                  "rfilename": "README.md"
+                },
+                {
+                  "rfilename": "data/eval-00000-of-00001.parquet"
+                },
+                {
+                  "rfilename": "data/test-00000-of-00001.parquet"
+                },
+                {
+                  "rfilename": "data/train-00000-of-00001.parquet"
+                }
+              ],
+              "card_data": {
+                "language": [],
+                "tags": [],
+                "datasets": [],
+                "task_categories": [],
+                "size_categories": [],
+                "metrics": [],
+                "widget": []
+              },
+              "tags": [
+                "size_categories:10K<n<100K",
+                "format:parquet",
+                "modality:text",
+                "library:datasets",
+                "library:pandas",
+                "library:mlcroissant",
+                "library:polars",
+                "region:us"
+              ],
+              "readme": "---\ndataset_info:\n  features:\n  - name: id\n    dtype: int64\n  - name: translation\n    struct:\n    - name: en\n      dtype: string\n    - name: vi\n      dtype: string\n  splits:\n  - name: train\n    num_bytes: 2478779.1928870734\n    num_examples: 10000\n  - name: eval\n    num_bytes: 247877.91928870731\n    num_examples: 1000\n  - name: test\n    num_bytes: 329197\n    num_examples: 1268\n  download_size: 1844813\n  dataset_size: 3055854.112175781\nconfigs:\n- config_name: default\n  data_files:\n  - split: train\n    path: data/train-*\n  - split: eval\n    path: data/eval-*\n  - split: test\n    path: data/test-*\n---\n",
+              "extracted_code": ""
+            },
+            {
+              "id": "abisee/cnn_dailymail",
+              "author": "abisee",
+              "sha": "96df5e686bee6baa90b8bee7c28b81fa3fa6223d",
+              "created_at": "2022-03-02T23:29:22+00:00",
+              "last_modified": "2024-01-18T15:31:34+00:00",
+              "private": false,
+              "gated": false,
+              "disabled": false,
+              "downloads": 99436,
+              "likes": 296,
+              "siblings": [
+                {
+                  "rfilename": ".gitattributes"
+                },
+                {
+                  "rfilename": "1.0.0/test-00000-of-00001.parquet"
+                },
+                {
+                  "rfilename": "1.0.0/train-00000-of-00003.parquet"
+                },
+                {
+                  "rfilename": "1.0.0/train-00001-of-00003.parquet"
+                },
+                {
+                  "rfilename": "1.0.0/train-00002-of-00003.parquet"
+                },
+                {
+                  "rfilename": "1.0.0/validation-00000-of-00001.parquet"
+                },
+                {
+                  "rfilename": "2.0.0/test-00000-of-00001.parquet"
+                },
+                {
+                  "rfilename": "2.0.0/train-00000-of-00003.parquet"
+                },
+                {
+                  "rfilename": "2.0.0/train-00001-of-00003.parquet"
+                },
+                {
+                  "rfilename": "2.0.0/train-00002-of-00003.parquet"
+                }
+              ],
+              "card_data": {
+                "license": [
+                  "apache-2.0"
+                ],
+                "language": [
+                  "en"
+                ],
+                "tags": [],
+                "datasets": [],
+                "task_categories": [
+                  "summarization"
+                ],
+                "size_categories": [
+                  "100K<n<1M"
+                ],
+                "metrics": [],
+                "widget": []
+              },
+              "tags": [
+                "task_categories:summarization",
+                "task_ids:news-articles-summarization",
+                "annotations_creators:no-annotation",
+                "language_creators:found",
+                "multilinguality:monolingual",
+                "source_datasets:original",
+                "language:en",
+                "license:apache-2.0",
+                "size_categories:100K<n<1M",
+                "format:parquet",
+                "modality:text",
+                "library:datasets",
+                "library:dask",
+                "library:mlcroissant",
+                "library:polars",
+                "region:us"
+              ],
+              "readme": "---\nannotations_creators:\n- no-annotation\nlanguage_creators:\n- found\nlanguage:\n- en\nlicense:\n- apache-2.0\nmultilinguality:\n- monolingual\nsize_categories:\n- 100K<n<1M\nsource_datasets:\n- original\ntask_categories:\n- summarization\ntask_ids:\n- news-articles-summarization\npaperswithcode_id: cnn-daily-mail-1\npretty_name: CNN / Daily Mail\ndataset_info:\n- config_name: 1.0.0\n  features:\n  - name: article\n    dtype: string\n  - name: highlights\n    dtype: string\n  - name: id\n    dtype: string\n  splits:\n  - name: train\n    num_bytes: 1261703785\n    num_examples: 287113\n  - name: validation\n    num_bytes: 57732412\n    num_examples: 13368\n  - name: test\n    num_bytes: 49925732\n    num_examples: 11490\n  download_size: 836927248\n  dataset_size: 1369361929\n- config_name: 2.0.0\n  features:\n  - name: article\n    dtype: string\n  - name: highlights\n    dtype: string\n  - name: id\n    dtype: string\n  splits:\n  - name: train\n    num_bytes: 1261703785\n    num_examples: 287113\n  - name: validation\n    num_bytes: 57732412\n    num_examples: 13368\n  - name: test\n    num_bytes: 49925732\n    num_examples: 11490\n  download_size: 837094602\n  dataset_size: 1369361929\n- config_name: 3.0.0\n  features:\n  - name: article\n    dtype: string\n  - name: highlights\n    dtype: string\n  - name: id\n    dtype: string\n  splits:\n  - name: train\n    num_bytes: 1261703785\n    num_examples: 287113\n  - name: validation\n    num_bytes: 57732412\n    num_examples: 13368\n  - name: test\n    num_bytes: 49925732\n    num_examples: 11490\n  download_size: 837094602\n  dataset_size: 1369361929\nconfigs:\n- config_name: 1.0.0\n  data_files:\n  - split: train\n    path: 1.0.0/train-*\n  - split: validation\n    path: 1.0.0/validation-*\n  - split: test\n    path: 1.0.0/test-*\n- config_name: 2.0.0\n  data_files:\n  - split: train\n    path: 2.0.0/train-*\n  - split: validation\n    path: 2.0.0/validation-*\n  - split: test\n    path: 2.0.0/test-*\n- config_name: 3.0.0\n  data_files:\n  - split: train\n    path: 3.0.0/train-*\n  - split: validation\n    path: 3.0.0/validation-*\n  - split: test\n    path: 3.0.0/test-*\ntrain-eval-index:\n- config: 3.0.0\n  task: summarization\n  task_id: summarization\n  splits:\n    eval_split: test\n  col_mapping:\n    article: text\n    highlights: target\n---\n# Dataset Card for CNN Dailymail Dataset\n\n## Table of Contents\n- [Dataset Description](#dataset-description)\n  - [Dataset Summary](#dataset-summary)\n  - [Supported Tasks and Leaderboards](#supported-tasks-and-leaderboards)\n  - [Languages](#languages)\n- [Dataset Structure](#dataset-structure)\n  - [Data Instances](#data-instances)\n  - [Data Fields](#data-fields)\n  - [Data Splits](#data-splits)\n- [Dataset Creation](#dataset-creation)\n  - [Curation Rationale](#curation-rationale)\n  - [Source Data](#source-data)\n  - [Annotations](#annotations)\n  - [Personal and Sensitive Information](#personal-and-sensitive-information)\n- [Considerations for Using the Data](#considerations-for-using-the-data)\n  - [Social Impact of Dataset](#social-impact-of-dataset)\n  - [Discussion of Biases](#discussion-of-biases)\n  - [Other Known Limitations](#other-known-limitations)\n- [Additional Information](#additional-information)\n  - [Dataset Curators](#dataset-curators)\n  - [Licensing Information](#licensing-information)\n  - [Citation Information](#citation-information)\n  - [Contributions](#contributions)\n\n## Dataset Description\n\n- **Homepage:**\n- **Repository:** [CNN / DailyMail Dataset repository](https://github.com/abisee/cnn-dailymail)\n- **Paper:** [Abstractive Text Summarization Using Sequence-to-Sequence RNNs and Beyond](https://papers.nips.cc/paper/5945-teaching-machines-to-read-and-comprehend.pdf), [Get To The Point: Summarization with Pointer-Generator Networks](https://www.aclweb.org/anthology/K16-1028.pdf)\n- **Leaderboard:** [Papers with Code leaderboard for CNN / Dailymail Dataset](https://paperswithcode.com/sota/document-summarization-on-cnn-daily-mail)\n- **Point of Contact:** [Abigail See](mailto:abisee@stanford.edu)\n\n### Dataset Summary\n\nThe CNN / DailyMail Dataset is an English-language dataset containing just over 300k unique news articles as written by journalists at CNN and the Daily Mail. The current version supports both extractive and abstractive summarization, though the original version was created for machine reading and comprehension and abstractive question answering. \n\n### Supported Tasks and Leaderboards\n\n- 'summarization': [Versions 2.0.0 and 3.0.0 of the CNN / DailyMail Dataset](https://www.aclweb.org/anthology/K16-1028.pdf) can be used to train a model for abstractive and extractive summarization ([Version 1.0.0](https://papers.nips.cc/paper/5945-teaching-machines-to-read-and-comprehend.pdf) was developed for machine reading and comprehension and abstractive question answering). The model performance is measured by how high the output summary's [ROUGE](https://huggingface.co/metrics/rouge) score for a given article is when compared to the highlight as written by the original article author. [Zhong et al (2020)](https://www.aclweb.org/anthology/2020.acl-main.552.pdf) report a ROUGE-1 score of 44.41 when testing a model trained for extractive summarization. See the [Papers With Code leaderboard](https://paperswithcode.com/sota/document-summarization-on-cnn-daily-mail) for more models. \n\n### Languages\n\nThe BCP-47 code for English as generally spoken in the United States is en-US and the BCP-47 code for English as generally spoken in the United Kingdom is en-GB. It is unknown if other varieties of English are represented in the data.\n\n## Dataset Structure\n\n### Data Instances\n\nFor each instance, there is a string for the article, a string for the highlights, and a string for the id. See the [CNN / Daily Mail dataset viewer](https://huggingface.co/datasets/viewer/?dataset=cnn_dailymail&config=3.0.0) to explore more examples.\n\n```\n{'id': '0054d6d30dbcad772e20b22771153a2a9cbeaf62',\n 'article': '(CNN) -- An American woman died aboard a cruise ship that docked at Rio de Janeiro on Tuesday, the same ship on which 86 passengers previously fell ill, according to the state-run Brazilian news agency, Agencia Brasil. The American tourist died aboard the MS Veendam, owned by cruise operator Holland America. Federal Police told Agencia Brasil that forensic doctors were investigating her death. The ship's doctors told police that the woman was elderly and suffered from diabetes and hypertension, according the agency. The other passengers came down with diarrhea prior to her death during an earlier part of the trip, the ship's doctors said. The Veendam left New York 36 days ago for a South America tour.'\n 'highlights': 'The elderly woman suffered from diabetes and hypertension, ship's doctors say .\\nPreviously, 86 passengers had fallen ill on the ship, Agencia Brasil says .'}\n```\n\nThe average token count for the articles and the highlights are provided below:\n\n| Feature    | Mean Token Count |\n| ---------- | ---------------- |\n| Article    | 781              |\n| Highlights | 56               |\n\n### Data Fields\n\n- `id`: a string containing the heximal formated SHA1 hash of the url where the story was retrieved from\n- `article`: a string containing the body of the news article \n- `highlights`: a string containing the highlight of the article as written by the article author\n\n### Data Splits\n\nThe CNN/DailyMail dataset has 3 splits: _train_, _validation_, and _test_. Below are the statistics for Version 3.0.0 of the dataset.\n\n| Dataset Split | Number of Instances in Split                |\n| ------------- | ------------------------------------------- |\n| Train         | 287,113                                     |\n| Validation    | 13,368                                      |\n| Test          | 11,490                                      |\n\n## Dataset Creation\n\n### Curation Rationale\n\nVersion 1.0.0 aimed to support supervised neural methodologies for machine reading and question answering with a large amount of real natural language training data and released about 313k unique articles and nearly 1M Cloze style questions to go with the articles. Versions 2.0.0 and 3.0.0 changed the structure of the dataset to support summarization rather than question answering. Version 3.0.0 provided a non-anonymized version of the data, whereas both the previous versions were preprocessed to replace named entities with unique identifier labels. \n\n### Source Data\n\n#### Initial Data Collection and Normalization\n\nThe data consists of news articles and highlight sentences. In the question answering setting of the data, the articles are used as the context and entities are hidden one at a time in the highlight sentences, producing Cloze style questions where the goal of the model is to correctly guess which entity in the context has been hidden in the highlight. In the summarization setting, the highlight sentences are concatenated to form a summary of the article. The CNN articles were written between April 2007 and April 2015. The Daily Mail articles were written between June 2010 and April 2015. \n\nThe code for the original data collection is available at <https://github.com/deepmind/rc-data>. The articles were downloaded using archives of <www.cnn.com> and <www.dailymail.co.uk> on the Wayback Machine. Articles were not included in the Version 1.0.0 collection if they exceeded 2000 tokens. Due to accessibility issues with the Wayback Machine, Kyunghyun Cho has made the datasets available at <https://cs.nyu.edu/~kcho/DMQA/>. An updated version of the code that does not anonymize the data is available at <https://github.com/abisee/cnn-dailymail>. \n\nHermann et al provided their own tokenization script. The script provided by See uses the PTBTokenizer. It also lowercases the text and adds periods to lines missing them.\n\n#### Who are the source language producers?\n\nThe text was written by journalists at CNN and the Daily Mail. \n\n### Annotations\n\nThe dataset does not contain any additional annotations.\n\n#### Annotation process\n\n[N/A]\n\n#### Who are the annotators?\n\n[N/A]\n\n### Personal and Sensitive Information\n\nVersion 3.0 is not anonymized, so individuals' names can be found in the dataset. Information about the original author is not included in the dataset.\n\n## Considerations for Using the Data\n\n### Social Impact of Dataset\n\nThe purpose of this dataset is to help develop models that can summarize long paragraphs of text in one or two sentences.\n\nThis task is useful for efficiently presenting information given a large quantity of text. It should be made clear that any summarizations produced by models trained on this dataset are reflective of the language used in the articles, but are in fact automatically generated.\n\n### Discussion of Biases\n\n[Bordia and Bowman (2019)](https://www.aclweb.org/anthology/N19-3002.pdf) explore measuring gender bias and debiasing techniques in the CNN / Dailymail dataset, the Penn Treebank, and WikiText-2. They find the CNN / Dailymail dataset to have a slightly lower gender bias based on their metric compared to the other datasets, but still show evidence of gender bias when looking at words such as 'fragile'.\n\nBecause the articles were written by and for people in the US and the UK, they will likely present specifically US and UK perspectives and feature events that are considered relevant to those populations during the time that the articles were published. \n\n### Other Known Limitations\n\nNews articles have been shown to conform to writing conventions in which important information is primarily presented in the first third of the article [(Kryściński et al, 2019)](https://www.aclweb.org/anthology/D19-1051.pdf). [Chen et al (2016)](https://www.aclweb.org/anthology/P16-1223.pdf) conducted a manual study of 100 random instances of the first version of the dataset and found 25% of the samples to be difficult even for humans to answer correctly due to ambiguity and coreference errors. \n\nIt should also be noted that machine-generated summarizations, even when extractive, may differ in truth values when compared to the original articles. \n\n## Additional Information\n\n### Dataset Curators\n\nThe data was originally collected by Karl Moritz Hermann, Tomáš Kočiský, Edward Grefenstette, Lasse Espeholt, Will Kay, Mustafa Suleyman, and Phil Blunsom of Google DeepMind. Tomáš Kočiský and Phil Blunsom are also affiliated with the University of Oxford. They released scripts to collect and process the data into the question answering format. \n\nRamesh Nallapati, Bowen Zhou, Cicero dos Santos, and Bing Xiang of IMB Watson and Çağlar Gu̇lçehre of Université de Montréal modified Hermann et al's collection scripts to restore the data to a summary format. They also produced both anonymized and non-anonymized versions.\n\nThe code for the non-anonymized version is made publicly available by Abigail See of Stanford University, Peter J. Liu of Google Brain and Christopher D. Manning of Stanford University at <https://github.com/abisee/cnn-dailymail>. The work at Stanford University was supported by the DARPA DEFT ProgramAFRL contract no. FA8750-13-2-0040.\n\n### Licensing Information\n\nThe CNN / Daily Mail dataset version 1.0.0 is released under the [Apache-2.0 License](http://www.apache.org/licenses/LICENSE-2.0). \n\n### Citation Information\n\n```\n@inproceedings{see-etal-2017-get,\n    title = \"Get To The Point: Summarization with Pointer-Generator Networks\",\n    author = \"See, Abigail  and\n      Liu, Peter J.  and\n      Manning, Christopher D.\",\n    booktitle = \"Proceedings of the 55th Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers)\",\n    month = jul,\n    year = \"2017\",\n    address = \"Vancouver, Canada\",\n    publisher = \"Association for Computational Linguistics\",\n    url = \"https://www.aclweb.org/anthology/P17-1099\",\n    doi = \"10.18653/v1/P17-1099\",\n    pages = \"1073--1083\",\n    abstract = \"Neural sequence-to-sequence models have provided a viable new approach for abstractive text summarization (meaning they are not restricted to simply selecting and rearranging passages from the original text). However, these models have two shortcomings: they are liable to reproduce factual details inaccurately, and they tend to repeat themselves. In this work we propose a novel architecture that augments the standard sequence-to-sequence attentional model in two orthogonal ways. First, we use a hybrid pointer-generator network that can copy words from the source text via pointing, which aids accurate reproduction of information, while retaining the ability to produce novel words through the generator. Second, we use coverage to keep track of what has been summarized, which discourages repetition. We apply our model to the CNN / Daily Mail summarization task, outperforming the current abstractive state-of-the-art by at least 2 ROUGE points.\",\n}\n```\n\n```\n@inproceedings{DBLP:conf/nips/HermannKGEKSB15,\n  author={Karl Moritz Hermann and Tomás Kociský and Edward Grefenstette and Lasse Espeholt and Will Kay and Mustafa Suleyman and Phil Blunsom},\n  title={Teaching Machines to Read and Comprehend},\n  year={2015},\n  cdate={1420070400000},\n  pages={1693-1701},\n  url={http://papers.nips.cc/paper/5945-teaching-machines-to-read-and-comprehend},\n  booktitle={NIPS},\n  crossref={conf/nips/2015}\n}\n\n```\n\n### Contributions\n\nThanks to [@thomwolf](https://github.com/thomwolf), [@lewtun](https://github.com/lewtun), [@jplu](https://github.com/jplu), [@jbragg](https://github.com/jbragg), [@patrickvonplaten](https://github.com/patrickvonplaten) and [@mcmillanmajora](https://github.com/mcmillanmajora) for adding this dataset.",
+              "extracted_code": ""
+            },
+            {
+              "id": "ereverter/cnn_dailymail_extractive",
+              "author": "ereverter",
+              "sha": "ffbbe242d9fd00c7018dacfe882b285f496c0425",
+              "created_at": "2023-07-19T15:28:20+00:00",
+              "last_modified": "2023-07-19T18:45:02+00:00",
+              "private": false,
+              "gated": false,
+              "disabled": false,
+              "downloads": 187,
+              "likes": 6,
+              "siblings": [
+                {
+                  "rfilename": ".gitattributes"
+                },
+                {
+                  "rfilename": "README.md"
+                },
+                {
+                  "rfilename": "data/test-00000-of-00001-b6d56a01af3eafaf.parquet"
+                },
+                {
+                  "rfilename": "data/train-00000-of-00003-6e7bd453af82621c.parquet"
+                },
+                {
+                  "rfilename": "data/train-00001-of-00003-fc78d1231ca02af3.parquet"
+                },
+                {
+                  "rfilename": "data/train-00002-of-00003-d063d44fd5473bdd.parquet"
+                },
+                {
+                  "rfilename": "data/validation-00000-of-00001-c10b5e7c7bce5655.parquet"
+                }
+              ],
+              "card_data": {
+                "license": "mit",
+                "language": [
+                  "en"
+                ],
+                "tags": [],
+                "datasets": [],
+                "task_categories": [
+                  "summarization"
+                ],
+                "size_categories": [
+                  "100K<n<1M"
+                ],
+                "metrics": [],
+                "widget": []
+              },
+              "tags": [
+                "task_categories:summarization",
+                "language:en",
+                "license:mit",
+                "size_categories:100K<n<1M",
+                "format:parquet",
+                "modality:text",
+                "library:datasets",
+                "library:dask",
+                "library:mlcroissant",
+                "library:polars",
+                "arxiv:1903.10318",
+                "region:us"
+              ],
+              "readme": "---\ndataset_info:\n  features:\n  - name: src\n    sequence: string\n  - name: tgt\n    sequence: string\n  - name: labels\n    sequence: int64\n  splits:\n  - name: test\n    num_bytes: 53831114\n    num_examples: 11490\n  - name: train\n    num_bytes: 1376640992\n    num_examples: 287113\n  - name: validation\n    num_bytes: 62200550\n    num_examples: 13368\n  download_size: 857262516\n  dataset_size: 1492672656\nlicense: mit\ntask_categories:\n- summarization\nlanguage:\n- en\nsize_categories:\n- 100K<n<1M\n---\n## Data Card for Extractive CNN/DailyMail Dataset\n\n### Overview\nThis is an extractive version of the [CNN/Dailymail](https://huggingface.co/datasets/cnn_dailymail) dataset. The structure of this dataset is identical to the original except for a minor modification in the data representation and the introduction of labels to denote the extractive summary.\n\nThe labels are generated following a greedy algorithm, as proposed by [Liu (2019)](https://arxiv.org/abs/1903.10318). The curation process can be found in the [bertsum-hf](https://github.com/eReverter/bertsum-hf) repository. I am uploading it in case someone does not want to go through the preprocessing, although Liu has a version ready for training in its [bertsum](https://github.com/nlpyang/BertSum) repository!\n\nIn this dataset:\n- 'src' corresponds to 'article',\n- 'tgt' equates to 'abstract',\n- 'labels' represents a mapping of sentences forming the extractive summary.\n\n### Data Architecture\n\nEach entry in the dataset contains the following fields:\n- `id`: a unique `string` identifier for each example.\n- `src`: a `list[string]` field representing the original news article. Each string in the list is a separate sentence from the article.\n- `tgt`: a `list[string]` field representing the professionally edited highlights or abstract of the article.\n- `labels`: a `list[bool]` field with binary values. Each boolean value corresponds to a sentence in 'article', indicating whether that sentence is part of the extractive summary (1 for True, 0 for False).\n\n### Sample Data Entry\nHere is an illustrative example from the dataset:\n\n```json\n{\n\"id\": \"1\",\n\"src\": [\"This is the first sentence\",\n\"This is the second\"],\n\"tgt\": [\"This is one of the highlights\"],\n\"labels\": [1, 0]\n}\n```\n\nIn this example, the first sentence of the article is selected as part of the extractive summary (as indicated by '1' in the 'labels'), while the second sentence is not ('0' in the 'labels').\n\n### Usage\n\nThe extractive CNN/DailyMail dataset can be used to train and evaluate models for extractive text summarization tasks. It allows models to learn to predict which sentences from an original text contribute to a summary, providing a binary mapping as a reference. The 'tgt' or 'abstract' field can serve as a basis for comparison, helping to assess how well the selected sentences cover the key points in the abstract.",
+              "extracted_code": ""
+            },
+            {
+              "id": "stanfordnlp/sst2",
+              "author": "stanfordnlp",
+              "sha": "8d51e7e4887a4caaa95b3fbebbf53c0490b58bbb",
+              "created_at": "2022-06-13T14:01:47+00:00",
+              "last_modified": "2024-01-04T16:31:07+00:00",
+              "private": false,
+              "gated": false,
+              "disabled": false,
+              "downloads": 19389,
+              "likes": 130,
+              "siblings": [
+                {
+                  "rfilename": ".gitattributes"
+                },
+                {
+                  "rfilename": "README.md"
+                },
+                {
+                  "rfilename": "data/test-00000-of-00001.parquet"
+                },
+                {
+                  "rfilename": "data/train-00000-of-00001.parquet"
+                },
+                {
+                  "rfilename": "data/validation-00000-of-00001.parquet"
+                }
+              ],
+              "card_data": {
+                "license": [
+                  "unknown"
+                ],
+                "language": [
+                  "en"
+                ],
+                "tags": [],
+                "datasets": [],
+                "task_categories": [
+                  "text-classification"
+                ],
+                "size_categories": [
+                  "10K<n<100K"
+                ],
+                "metrics": [],
+                "widget": []
+              },
+              "tags": [
+                "task_categories:text-classification",
+                "task_ids:sentiment-classification",
+                "annotations_creators:crowdsourced",
+                "language_creators:found",
+                "multilinguality:monolingual",
+                "source_datasets:original",
+                "language:en",
+                "license:unknown",
+                "size_categories:10K<n<100K",
+                "format:parquet",
+                "modality:text",
+                "library:datasets",
+                "library:pandas",
+                "library:mlcroissant",
+                "library:polars",
+                "region:us"
+              ],
+              "readme": "---\nannotations_creators:\n- crowdsourced\nlanguage_creators:\n- found\nlanguage:\n- en\nlicense:\n- unknown\nmultilinguality:\n- monolingual\nsize_categories:\n- 10K<n<100K\nsource_datasets:\n- original\ntask_categories:\n- text-classification\ntask_ids:\n- sentiment-classification\npaperswithcode_id: sst\npretty_name: Stanford Sentiment Treebank v2\ndataset_info:\n  features:\n  - name: idx\n    dtype: int32\n  - name: sentence\n    dtype: string\n  - name: label\n    dtype:\n      class_label:\n        names:\n          '0': negative\n          '1': positive\n  splits:\n  - name: train\n    num_bytes: 4681603\n    num_examples: 67349\n  - name: validation\n    num_bytes: 106252\n    num_examples: 872\n  - name: test\n    num_bytes: 216640\n    num_examples: 1821\n  download_size: 3331058\n  dataset_size: 5004495\nconfigs:\n- config_name: default\n  data_files:\n  - split: train\n    path: data/train-*\n  - split: validation\n    path: data/validation-*\n  - split: test\n    path: data/test-*\n---\n\n# Dataset Card for [Dataset Name]\n\n## Table of Contents\n- [Table of Contents](#table-of-contents)\n- [Dataset Description](#dataset-description)\n  - [Dataset Summary](#dataset-summary)\n  - [Supported Tasks and Leaderboards](#supported-tasks-and-leaderboards)\n  - [Languages](#languages)\n- [Dataset Structure](#dataset-structure)\n  - [Data Instances](#data-instances)\n  - [Data Fields](#data-fields)\n  - [Data Splits](#data-splits)\n- [Dataset Creation](#dataset-creation)\n  - [Curation Rationale](#curation-rationale)\n  - [Source Data](#source-data)\n  - [Annotations](#annotations)\n  - [Personal and Sensitive Information](#personal-and-sensitive-information)\n- [Considerations for Using the Data](#considerations-for-using-the-data)\n  - [Social Impact of Dataset](#social-impact-of-dataset)\n  - [Discussion of Biases](#discussion-of-biases)\n  - [Other Known Limitations](#other-known-limitations)\n- [Additional Information](#additional-information)\n  - [Dataset Curators](#dataset-curators)\n  - [Licensing Information](#licensing-information)\n  - [Citation Information](#citation-information)\n  - [Contributions](#contributions)\n\n## Dataset Description\n\n- **Homepage:** https://nlp.stanford.edu/sentiment/\n- **Repository:**\n- **Paper:** [Recursive Deep Models for Semantic Compositionality Over a Sentiment Treebank](https://www.aclweb.org/anthology/D13-1170/)\n- **Leaderboard:**\n- **Point of Contact:**\n\n### Dataset Summary\n\nThe Stanford Sentiment Treebank is a corpus with fully labeled parse trees that allows for a complete analysis of the\ncompositional effects of sentiment in language. The corpus is based on the dataset introduced by Pang and Lee (2005)\nand consists of 11,855 single sentences extracted from movie reviews. It was parsed with the Stanford parser and\nincludes a total of 215,154 unique phrases from those parse trees, each annotated by 3 human judges.\n\nBinary classification experiments on full sentences (negative or somewhat negative vs somewhat positive or positive\nwith neutral sentences discarded) refer to the dataset as SST-2 or SST binary.\n\n### Supported Tasks and Leaderboards\n\n- `sentiment-classification`\n\n### Languages\n\nThe text in the dataset is in English (`en`).\n\n## Dataset Structure\n\n### Data Instances\n\n```\n{'idx': 0,\n 'sentence': 'hide new secretions from the parental units ',\n 'label': 0}\n```\n\n### Data Fields\n\n- `idx`: Monotonically increasing index ID.\n- `sentence`: Complete sentence expressing an opinion about a film.\n- `label`: Sentiment of the opinion, either \"negative\" (0) or positive (1). The test set labels are hidden (-1).\n\n### Data Splits\n\n|                    |    train | validation | test |\n|--------------------|---------:|-----------:|-----:|\n| Number of examples |    67349 |        872 | 1821 |\n\n## Dataset Creation\n\n### Curation Rationale\n\n[More Information Needed]\n\n### Source Data\n\n#### Initial Data Collection and Normalization\n\n[More Information Needed]\n\n#### Who are the source language producers?\n\nRotten Tomatoes reviewers.\n\n### Annotations\n\n#### Annotation process\n\n[More Information Needed]\n\n#### Who are the annotators?\n\n[More Information Needed]\n\n### Personal and Sensitive Information\n\n[More Information Needed]\n\n## Considerations for Using the Data\n\n### Social Impact of Dataset\n\n[More Information Needed]\n\n### Discussion of Biases\n\n[More Information Needed]\n\n### Other Known Limitations\n\n[More Information Needed]\n\n## Additional Information\n\n### Dataset Curators\n\n[More Information Needed]\n\n### Licensing Information\n\nUnknown.\n\n### Citation Information\n\n```bibtex\n@inproceedings{socher-etal-2013-recursive,\n    title = \"Recursive Deep Models for Semantic Compositionality Over a Sentiment Treebank\",\n    author = \"Socher, Richard  and\n      Perelygin, Alex  and\n      Wu, Jean  and\n      Chuang, Jason  and\n      Manning, Christopher D.  and\n      Ng, Andrew  and\n      Potts, Christopher\",\n    booktitle = \"Proceedings of the 2013 Conference on Empirical Methods in Natural Language Processing\",\n    month = oct,\n    year = \"2013\",\n    address = \"Seattle, Washington, USA\",\n    publisher = \"Association for Computational Linguistics\",\n    url = \"https://www.aclweb.org/anthology/D13-1170\",\n    pages = \"1631--1642\",\n}\n```\n\n### Contributions\n\nThanks to [@albertvillanova](https://github.com/albertvillanova) for adding this dataset.",
+              "extracted_code": ""
+            },
+            {
+              "id": "DaniFrame/SST2Perturbed",
+              "author": "DaniFrame",
+              "sha": "ac528cfa2e1a999064c29b562d19596a65048796",
+              "created_at": "2023-06-19T08:07:22+00:00",
+              "last_modified": "2023-06-21T09:24:20+00:00",
+              "private": false,
+              "gated": false,
+              "disabled": false,
+              "downloads": 76,
+              "likes": 0,
+              "siblings": [
+                {
+                  "rfilename": ".gitattributes"
+                },
+                {
+                  "rfilename": "README.md"
+                },
+                {
+                  "rfilename": "data/sst2_perturbed_contraction-00000-of-00001-2cbb0a593b838a89.parquet"
+                },
+                {
+                  "rfilename": "data/sst2_perturbed_insertadv-00000-of-00001-5caa601e8bbbd118.parquet"
+                },
+                {
+                  "rfilename": "data/sst2_perturbed_keyboard_0.01-00000-of-00001-e3a3849f2842977c.parquet"
+                },
+                {
+                  "rfilename": "data/sst2_perturbed_keyboard_0.05-00000-of-00001-5394f8b2eb2cab63.parquet"
+                },
+                {
+                  "rfilename": "data/sst2_perturbed_keyboard_0.1-00000-of-00001-c017af88b636542a.parquet"
+                },
+                {
+                  "rfilename": "data/sst2_perturbed_ocr_0.01-00000-of-00001-aaac500511a222db.parquet"
+                },
+                {
+                  "rfilename": "data/sst2_perturbed_ocr_0.05-00000-of-00001-774f0fa1106d4dbe.parquet"
+                },
+                {
+                  "rfilename": "data/sst2_perturbed_ocr_0.1-00000-of-00001-cf5ae5c710dc18de.parquet"
+                }
+              ],
+              "card_data": {
+                "language": [],
+                "tags": [],
+                "datasets": [],
+                "task_categories": [],
+                "size_categories": [],
+                "metrics": [],
+                "widget": []
+              },
+              "tags": [
+                "size_categories:10K<n<100K",
+                "format:parquet",
+                "modality:text",
+                "library:datasets",
+                "library:pandas",
+                "library:mlcroissant",
+                "library:polars",
+                "region:us"
+              ],
+              "readme": "---\ndataset_info:\n  features:\n  - name: sentence\n    dtype: string\n  - name: label\n    dtype:\n      class_label:\n        names:\n          '0': negative\n          '1': positive\n  - name: idx\n    dtype: int32\n  splits:\n  - name: sst2_perturbed_keyboard_0.01\n    num_bytes: 212201\n    num_examples: 1821\n  - name: sst2_perturbed_keyboard_0.05\n    num_bytes: 212245\n    num_examples: 1821\n  - name: sst2_perturbed_keyboard_0.1\n    num_bytes: 212344\n    num_examples: 1821\n  - name: sst2_perturbed_ocr_0.01\n    num_bytes: 212189\n    num_examples: 1821\n  - name: sst2_perturbed_ocr_0.05\n    num_bytes: 212189\n    num_examples: 1821\n  - name: sst2_perturbed_ocr_0.1\n    num_bytes: 212189\n    num_examples: 1821\n  - name: sst2_perturbed_spellingerror_0.01\n    num_bytes: 212783\n    num_examples: 1821\n  - name: sst2_perturbed_spellingerror_0.05\n    num_bytes: 214456\n    num_examples: 1821\n  - name: sst2_perturbed_spellingerror_0.1\n    num_bytes: 216511\n    num_examples: 1821\n  - name: sst2_perturbed_typos_0.01\n    num_bytes: 212220\n    num_examples: 1821\n  - name: sst2_perturbed_typos_0.05\n    num_bytes: 212365\n    num_examples: 1821\n  - name: sst2_perturbed_typos_0.1\n    num_bytes: 212450\n    num_examples: 1821\n  - name: sst2_perturbed_sne_0.1\n    num_bytes: 216862\n    num_examples: 1821\n  - name: sst2_perturbed_sne_0.2\n    num_bytes: 216766\n    num_examples: 1821\n  - name: sst2_perturbed_sne_0.3\n    num_bytes: 216841\n    num_examples: 1821\n  - name: sst2_perturbed_sswn_0.1\n    num_bytes: 214709\n    num_examples: 1821\n  - name: sst2_perturbed_sswn_0.2\n    num_bytes: 217259\n    num_examples: 1821\n  - name: sst2_perturbed_sswn_0.3\n    num_bytes: 220057\n    num_examples: 1821\n  - name: sst2_perturbed_contraction\n    num_bytes: 215284\n    num_examples: 1821\n  - name: sst2_perturbed_insertadv\n    num_bytes: 252457\n    num_examples: 1821\n  - name: sst2_perturbed_prejudice\n    num_bytes: 216640\n    num_examples: 1821\n  - name: sst2_perturbed_punctuation\n    num_bytes: 221669\n    num_examples: 1821\n  - name: sst2_perturbed_reverseneg\n    num_bytes: 221265\n    num_examples: 1821\n  - name: sst2_perturbed_swapnum\n    num_bytes: 216399\n    num_examples: 1821\n  - name: sst2_perturbed_verbtense\n    num_bytes: 213932\n    num_examples: 1821\n  - name: sst2_perturbed_twitter\n    num_bytes: 236488\n    num_examples: 1821\n  - name: sst2_perturbed_wordcase\n    num_bytes: 216640\n    num_examples: 1821\n  download_size: 4195096\n  dataset_size: 5867410\n---\n# Dataset Card for \"SST2Perturbed\"\n\n[More Information needed](https://github.com/huggingface/datasets/blob/main/CONTRIBUTING.md#how-to-contribute-to-the-dataset-cards)",
+              "extracted_code": ""
+            },
+            {
+              "id": "EdinburghNLP/xsum",
+              "author": "EdinburghNLP",
+              "sha": "40db7604fedb616a9d2b0673d11838fa5be8451c",
+              "created_at": "2022-03-02T23:29:22+00:00",
+              "last_modified": "2023-04-05T13:45:25+00:00",
+              "private": false,
+              "gated": false,
+              "disabled": false,
+              "downloads": 18339,
+              "likes": 120,
+              "siblings": [
+                {
+                  "rfilename": ".gitattributes"
+                },
+                {
+                  "rfilename": "README.md"
+                },
+                {
+                  "rfilename": "data/XSUM-EMNLP18-Summary-Data-Original.tar.gz"
+                },
+                {
+                  "rfilename": "xsum.py"
+                }
+              ],
+              "card_data": {
+                "license": [
+                  "unknown"
+                ],
+                "language": [
+                  "en"
+                ],
+                "tags": [],
+                "datasets": [],
+                "task_categories": [
+                  "summarization"
+                ],
+                "size_categories": [
+                  "100K<n<1M"
+                ],
+                "metrics": [],
+                "widget": []
+              },
+              "tags": [
+                "task_categories:summarization",
+                "task_ids:news-articles-summarization",
+                "annotations_creators:found",
+                "language_creators:found",
+                "multilinguality:monolingual",
+                "source_datasets:original",
+                "language:en",
+                "license:unknown",
+                "size_categories:100K<n<1M",
+                "modality:text",
+                "library:datasets",
+                "library:mlcroissant",
+                "arxiv:1808.08745",
+                "region:us"
+              ],
+              "readme": "---\nannotations_creators:\n- found\nlanguage_creators:\n- found\nlanguage:\n- en\nlicense:\n- unknown\nmultilinguality:\n- monolingual\npretty_name: Extreme Summarization (XSum)\npaperswithcode_id: xsum\nsize_categories:\n- 100K<n<1M\nsource_datasets:\n- original\ntask_categories:\n- summarization\ntask_ids:\n- news-articles-summarization\ntrain-eval-index:\n- config: default\n  task: summarization\n  task_id: summarization\n  splits:\n    train_split: train\n    eval_split: test\n  col_mapping:\n    document: text\n    summary: target\n  metrics:\n  - type: rouge\n    name: Rouge\ndataset_info:\n  features:\n  - name: document\n    dtype: string\n  - name: summary\n    dtype: string\n  - name: id\n    dtype: string\n  splits:\n  - name: train\n    num_bytes: 479206608\n    num_examples: 204045\n  - name: validation\n    num_bytes: 26292901\n    num_examples: 11332\n  - name: test\n    num_bytes: 26756165\n    num_examples: 11334\n  download_size: 257302866\n  dataset_size: 532255674\n---\n\n# Dataset Card for \"xsum\"\n\n## Table of Contents\n- [Dataset Description](#dataset-description)\n  - [Dataset Summary](#dataset-summary)\n  - [Supported Tasks and Leaderboards](#supported-tasks-and-leaderboards)\n  - [Languages](#languages)\n- [Dataset Structure](#dataset-structure)\n  - [Data Instances](#data-instances)\n  - [Data Fields](#data-fields)\n  - [Data Splits](#data-splits)\n- [Dataset Creation](#dataset-creation)\n  - [Curation Rationale](#curation-rationale)\n  - [Source Data](#source-data)\n  - [Annotations](#annotations)\n  - [Personal and Sensitive Information](#personal-and-sensitive-information)\n- [Considerations for Using the Data](#considerations-for-using-the-data)\n  - [Social Impact of Dataset](#social-impact-of-dataset)\n  - [Discussion of Biases](#discussion-of-biases)\n  - [Other Known Limitations](#other-known-limitations)\n- [Additional Information](#additional-information)\n  - [Dataset Curators](#dataset-curators)\n  - [Licensing Information](#licensing-information)\n  - [Citation Information](#citation-information)\n  - [Contributions](#contributions)\n\n## Dataset Description\n\n- **Homepage:**\n- **Repository:** https://github.com/EdinburghNLP/XSum\n- **Paper:** [Don't Give Me the Details, Just the Summary! Topic-Aware Convolutional Neural Networks for Extreme Summarization](https://arxiv.org/abs/1808.08745)\n- **Point of Contact:** [Shashi Narayan](mailto:shashi.narayan@ed.ac.uk)\n- **Size of downloaded dataset files:** 257.30 MB\n- **Size of the generated dataset:** 532.26 MB\n- **Total amount of disk used:** 789.56 MB\n\n### Dataset Summary\n\nExtreme Summarization (XSum) Dataset.\n\nThere are three features:\n  - document: Input news article.\n  - summary: One sentence summary of the article.\n  - id: BBC ID of the article.\n\n### Supported Tasks and Leaderboards\n\n[More Information Needed](https://github.com/huggingface/datasets/blob/master/CONTRIBUTING.md#how-to-contribute-to-the-dataset-cards)\n\n### Languages\n\n[More Information Needed](https://github.com/huggingface/datasets/blob/master/CONTRIBUTING.md#how-to-contribute-to-the-dataset-cards)\n\n## Dataset Structure\n\n### Data Instances\n\n#### default\n\n- **Size of downloaded dataset files:** 257.30 MB\n- **Size of the generated dataset:** 532.26 MB\n- **Total amount of disk used:** 789.56 MB\n\nAn example of 'validation' looks as follows.\n```\n{\n    \"document\": \"some-body\",\n    \"id\": \"29750031\",\n    \"summary\": \"some-sentence\"\n}\n```\n\n### Data Fields\n\nThe data fields are the same among all splits.\n\n#### default\n- `document`: a `string` feature.\n- `summary`: a `string` feature.\n- `id`: a `string` feature.\n\n### Data Splits\n\n| name  |train |validation|test |\n|-------|-----:|---------:|----:|\n|default|204045|     11332|11334|\n\n## Dataset Creation\n\n### Curation Rationale\n\n[More Information Needed](https://github.com/huggingface/datasets/blob/master/CONTRIBUTING.md#how-to-contribute-to-the-dataset-cards)\n\n### Source Data\n\n#### Initial Data Collection and Normalization\n\n[More Information Needed](https://github.com/huggingface/datasets/blob/master/CONTRIBUTING.md#how-to-contribute-to-the-dataset-cards)\n\n#### Who are the source language producers?\n\n[More Information Needed](https://github.com/huggingface/datasets/blob/master/CONTRIBUTING.md#how-to-contribute-to-the-dataset-cards)\n\n### Annotations\n\n#### Annotation process\n\n[More Information Needed](https://github.com/huggingface/datasets/blob/master/CONTRIBUTING.md#how-to-contribute-to-the-dataset-cards)\n\n#### Who are the annotators?\n\n[More Information Needed](https://github.com/huggingface/datasets/blob/master/CONTRIBUTING.md#how-to-contribute-to-the-dataset-cards)\n\n### Personal and Sensitive Information\n\n[More Information Needed](https://github.com/huggingface/datasets/blob/master/CONTRIBUTING.md#how-to-contribute-to-the-dataset-cards)\n\n## Considerations for Using the Data\n\n### Social Impact of Dataset\n\n[More Information Needed](https://github.com/huggingface/datasets/blob/master/CONTRIBUTING.md#how-to-contribute-to-the-dataset-cards)\n\n### Discussion of Biases\n\n[More Information Needed](https://github.com/huggingface/datasets/blob/master/CONTRIBUTING.md#how-to-contribute-to-the-dataset-cards)\n\n### Other Known Limitations\n\n[More Information Needed](https://github.com/huggingface/datasets/blob/master/CONTRIBUTING.md#how-to-contribute-to-the-dataset-cards)\n\n## Additional Information\n\n### Dataset Curators\n\n[More Information Needed](https://github.com/huggingface/datasets/blob/master/CONTRIBUTING.md#how-to-contribute-to-the-dataset-cards)\n\n### Licensing Information\n\n[More Information Needed](https://github.com/huggingface/datasets/blob/master/CONTRIBUTING.md#how-to-contribute-to-the-dataset-cards)\n\n### Citation Information\n\n```\n@article{Narayan2018DontGM,\n  title={Don't Give Me the Details, Just the Summary! Topic-Aware Convolutional Neural Networks for Extreme Summarization},\n  author={Shashi Narayan and Shay B. Cohen and Mirella Lapata},\n  journal={ArXiv},\n  year={2018},\n  volume={abs/1808.08745}\n}\n```\n\n\n### Contributions\n\nThanks to [@thomwolf](https://github.com/thomwolf), [@lewtun](https://github.com/lewtun), [@mariamabarham](https://github.com/mariamabarham), [@jbragg](https://github.com/jbragg), [@lhoestq](https://github.com/lhoestq), [@patrickvonplaten](https://github.com/patrickvonplaten) for adding this dataset.",
+              "extracted_code": ""
+            }
+          ]
+        }
+      }
     }
   },
   "idea_info_history": [
