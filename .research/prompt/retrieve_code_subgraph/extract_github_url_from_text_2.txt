@@ -1,0 +1,17 @@
+
+Input:
+# Task
+You carefully read the contents of the “Paper Outline” and select one GitHub link from the “GitHub URLs List” that you think is most relevant to the contents.
+# Constraints
+- Output the index number corresponding to the selected GitHub URL.
+- Be sure to select only one GitHub URL.
+- If there is no related GitHub link, output None.
+# Paper Outline
+The methodology addresses MLE's limitations in closed-ended text generation, where the goal is to produce the most probable output rather than estimate the full data distribution. A general learning framework, Lf(θ) = -Ex~pdata(x)[f(pθ(x))], is introduced, where f is a differentiable, increasing function. While a pure convex f leads to a desirable one-hot optimal distribution, it causes gradient vanishing during training. To overcome this, a convex-composition approach is proposed: Lfg(θ) = -Σ_i pdata(xi) * fg(pθ(xi)), combining an increasing convex function (f) with an increasing concave function (g, typically log-probability). This composition theoretically yields a sharper optimal distribution (pfg) than MLE's (pg), reducing Shannon entropy and concentrating probability mass on highly probable outputs. In experiments, an exponential function is primarily used for the convex component (Lf(θ) = -Ex~pdata(x)[pθ(x) k / T]). A two-step training strategy is employed: initial MLE pre-training followed by fine-tuning with the convex-composition loss to ensure stable training.
+
+# GitHub URLs List
+['https://github.com/ictnlp/Convex-Learning', 'https://github.com/facebookresearch/fairseq', 'https://github.com/facebookresearch/fairseq']
+Output:
+{
+    "index": 0
+}
