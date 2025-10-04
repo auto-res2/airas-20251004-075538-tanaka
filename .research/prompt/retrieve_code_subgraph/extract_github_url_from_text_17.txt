@@ -1,0 +1,17 @@
+
+Input:
+# Task
+You carefully read the contents of the “Paper Outline” and select one GitHub link from the “GitHub URLs List” that you think is most relevant to the contents.
+# Constraints
+- Output the index number corresponding to the selected GitHub URL.
+- Be sure to select only one GitHub URL.
+- If there is no related GitHub link, output None.
+# Paper Outline
+The methodology introduces a general learning framework using a loss function Lf(θ) = -Ex∼pdata(x)[f(pθ(x))], where f is a differentiable, increasing function (MLE is a special case with f=log). The core idea is that convex functions can lead to a one-hot optimal distribution, ideal for precise outputs. However, direct application of convex functions suffers from gradient vanishing issues during training. To address this, a 'convex-composition' approach is proposed: combining an increasing convex function f with an original increasing concave function g (like log-probability) to form Lfg(θ) = -Σ pdata(xi) * fg(pθ(xi)). This composition effectively sharpens the optimal distribution by allocating higher probabilities to more probable samples, reducing Shannon entropy. The paper primarily uses the exponential function as the convex component (e.g., Lf(θ) = -Ex∼pdata(x)[pθ(x)^(k/T)]). A two-step training strategy is employed: MLE pre-training followed by fine-tuning with convex-composition loss to ensure training stability.
+
+# GitHub URLs List
+['https://github.com/ictnlp/Convex-Learning', 'https://github.com/facebookresearch/fairseq', 'https://github.com/facebookresearch/fairseq']
+Output:
+{
+    "index": 0
+}
