@@ -1,0 +1,17 @@
+
+Input:
+# Task
+You carefully read the contents of the “Paper Outline” and select one GitHub link from the “GitHub URLs List” that you think is most relevant to the contents.
+# Constraints
+- Output the index number corresponding to the selected GitHub URL.
+- Be sure to select only one GitHub URL.
+- If there is no related GitHub link, output None.
+# Paper Outline
+FIGA's methodology involves two main components: data curation and fine-tuning. First, a SubPar Alignment (SPA) dataset is constructed by taking queries where an initial LLM (Alpaca-7b) performs poorly. Initial responses (ˆY) are generated, and a reward model (OpenAssistant/reward-model-deberta-v3-large-v2) filters instances based on reward scores (RˆY < η1, RY > η2, RY − RˆY > η3). Then, a powerful LLM (gpt-3.5-turbo) revises these initial responses into high-quality ones (˜Y) by making minimal adjustments based on ground-truth demonstrations (Y), categorized by reasons like lack of detail or inaccuracy, to reduce distribution shifts. Second, for fine-tuning, Levenshtein distance is used to compare ˆY and ˜Y, identifying tokens that are newly added, deleted, or substituted. Token-level weighting functions, ˜r(·) and ˆr(·), are introduced: α (e.g., 1) for added/substituted tokens in ˜Y, β (e.g., 0.5) for deleted/substituted tokens in ˆY, and γ (e.g., 0) for unchanged tokens. These weights are integrated into a new loss function that encourages desired actions (increasing probability of good tokens) and discourages undesired ones (decreasing probability of bad tokens), acting as a simplified, efficient version of RL without a separate critic model.
+
+# GitHub URLs List
+['https://github.com/RUCAIBox/FIGA', 'https://github.com/OpenLLMAI/OpenLLaMA2', 'https://github.com/tatsu-lab/stanford_alpaca', 'https://github.com/EleutherAI/lm-evaluation-harness']
+Output:
+{
+    "index": 0
+}
