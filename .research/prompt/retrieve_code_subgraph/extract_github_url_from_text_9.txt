@@ -1,0 +1,17 @@
+
+Input:
+# Task
+You carefully read the contents of the “Paper Outline” and select one GitHub link from the “GitHub URLs List” that you think is most relevant to the contents.
+# Constraints
+- Output the index number corresponding to the selected GitHub URL.
+- Be sure to select only one GitHub URL.
+- If there is no related GitHub link, output None.
+# Paper Outline
+EMO adapts Earth Mover Distance (EMD) to measure token-level probability distance between the model's output distribution (Qθ) and the human data distribution (P). The cost of transporting probability mass between tokens (C(vi, vj)) is defined using the cosine distance of their contextual embeddings from a pre-trained language model head, which remains fixed during training. To circumvent the high computational complexity and non-differentiability of direct EMD, the authors introduce a differentiable upper bound (DEMD) based on a specific transport plan ˜γ(vi, vj) = Qθ(vi)P(vj), resulting in the objective ^DEMD(Qθ, P) = |Q⊤ θ − P⊤|CP. The final training loss combines MLE and DEMD dynamically: L = 0.5 * (LMLE + (LMLE/LDEMD).detach() * LDEMD). This methodology promotes precision-recall harmonization, negative diversity awareness by penalizing non-ground-truth tokens based on their contextual similarity, and better train-test consistency by optimizing an expectation with respect to the model distribution.
+
+# GitHub URLs List
+['https://github.com/DRSY/EMO', 'https://github.com/open-compass/opencompass', 'https://github.com/tatsu-lab/alpaca_eval', 'https://github.com/open-compass/opencompass', 'https://github.com/tatsu-lab/stanford_alpaca']
+Output:
+{
+    "index": 0
+}
