@@ -1,0 +1,17 @@
+
+Input:
+# Task
+You carefully read the contents of the “Paper Outline” and select one GitHub link from the “GitHub URLs List” that you think is most relevant to the contents.
+# Constraints
+- Output the index number corresponding to the selected GitHub URL.
+- Be sure to select only one GitHub URL.
+- If there is no related GitHub link, output None.
+# Paper Outline
+ScaleGrad modifies the standard MLE objective's gradient to encourage the use of novel tokens. The core idea is to maintain a dynamic set of 'novel tokens' at each decoding step during training, defined as tokens not yet observed in the current ground-truth sequence. The method then re-normalizes the softmax output probabilities: probabilities of novel tokens are scaled down by a hyper-parameter γ (where γ ∈ (0,1)), while probabilities of non-novel tokens are effectively scaled up. This re-scaling dynamically alters the gradients such that for a ground-truth token that is also novel, its gradient norm is increased, compelling the model to assign even higher probability to it. Conversely, for a non-ground-truth token that is non-novel, its gradient norm is increased, pushing the model to assign much lower probability. This mechanism encourages novelty without compromising the learning of target tokens. The paper also provides a gradient-level comparison with Unlikelihood (UL) training, highlighting ScaleGrad's robustness against potential issues where UL might decrease ground-truth token probabilities in certain conditions.
+
+# GitHub URLs List
+['https://github.com/shawnlimn/ScaleGrad']
+Output:
+{
+    "index": 0
+}
