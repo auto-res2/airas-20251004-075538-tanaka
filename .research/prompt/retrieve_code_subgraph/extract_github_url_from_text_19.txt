@@ -1,0 +1,17 @@
+
+Input:
+# Task
+You carefully read the contents of the “Paper Outline” and select one GitHub link from the “GitHub URLs List” that you think is most relevant to the contents.
+# Constraints
+- Output the index number corresponding to the selected GitHub URL.
+- Be sure to select only one GitHub URL.
+- If there is no related GitHub link, output None.
+# Paper Outline
+ScaleGrad operates by directly maneuvering the gradients of the loss function during training. At each decoding step, it maintains a dynamic set of 'novel tokens' (Snovel), defined as tokens not observed in the ground-truth sequence up to the current step. The core of ScaleGrad involves re-normalizing the softmax output (probability distribution) over the vocabulary. For tokens belonging to Snovel, their generation probabilities are scaled down by a hyper-parameter γ ∈ (0,1). Conversely, for non-novel tokens, their probabilities are effectively scaled up. This re-scaling dynamically alters the gradient updates: it pushes the gradient norm further from zero for novel ground-truth tokens, encouraging the model to assign higher probabilities, and increases the gradient norm for non-novel, non-ground-truth tokens, pushing their probabilities lower. This mechanism forces the model to prioritize novel tokens while still learning to predict the correct ground truth. The paper also highlights that ScaleGrad avoids an 'undesired property' observed in Unlikelihood training where, under certain conditions, UL might inadvertently decrease the probability of ground-truth tokens.
+
+# GitHub URLs List
+['https://github.com/shawnlimn/ScaleGrad']
+Output:
+{
+    "index": 0
+}
