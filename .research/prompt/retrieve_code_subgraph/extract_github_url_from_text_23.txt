@@ -1,0 +1,17 @@
+
+Input:
+# Task
+You carefully read the contents of the “Paper Outline” and select one GitHub link from the “GitHub URLs List” that you think is most relevant to the contents.
+# Constraints
+- Output the index number corresponding to the selected GitHub URL.
+- Be sure to select only one GitHub URL.
+- If there is no related GitHub link, output None.
+# Paper Outline
+LASER (LAyer-SElective Rank reduction) is a post-training intervention that replaces specific weight matrices in Transformer models with their low-rank approximations. It uses Singular Value Decomposition (SVD) to identify and remove "higher-order components" (singular vectors with smaller singular values), retaining "lower-order components." The intervention is defined by a parameter type (e.g., Uin, Uout for MLP layers or attention matrices Wq, Wk, Wv, Wo), a layer number, and a rank reduction percentage (ρ). The rank is reduced to ⌊ρ · d⌋, where d is the original matrix dimension, preserving ρ fraction of the original rank. Interventions can be composed and require no additional training or parameters.
+
+# GitHub URLs List
+['https://github.com/kingoflolz/mesh-transformer-jax', 'https://github.com/mpSchrader/gym-sokoban', 'https://github.com/pratyushasharma/laser']
+Output:
+{
+    "index": 2
+}
