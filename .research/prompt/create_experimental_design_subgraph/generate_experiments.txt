@@ -1,0 +1,172 @@
+
+Input:
+You are a cutting-edge AI researcher. Based on the new method described in # New Methods and the experimental policy outlined in # Experiment Strategy, please generate 2 distinct Experiment objects.
+
+# Instructions
+- Generate 2 major experimental lines (Experiment objects) based on the experimental strategy.
+- Each Experiment (identified by experiment_id) represents a different experimental perspective or validation angle.
+- Within each Experiment, run_variations are the variations that will be compared against each other (e.g., ["baseline", "proposed"], ["full-method", "ablation-A", "ablation-B"]).
+- Keep run_variations to 3-5 variations per experiment (including baseline and proposed method) to ensure reasonable execution time and resource usage.
+- Each Experiment should:
+    - Have a unique experiment_id (e.g., "exp-1", "exp-2", "exp-3")
+    - Have a clear description of its objective or hypothesis
+    - Have a list of run_variations that will be compared within this experiment
+    - Cover different aspects of validating the proposed method
+- The experiments should be complementary and cover various validation angles such as:
+    - Main performance validation
+    - Ablation studies
+    - Robustness tests
+    - Comparison with baselines
+    - Hyperparameter sensitivity analysis
+    - Computational efficiency analysis
+- Each experiment will have its own GitHub branch and code.
+- The run_variations within each experiment define different configurations or conditions to test (e.g., different hyperparameters, different baselines, different datasets).
+
+- Design the details of each experiment assuming the execution environment specified in "Experimental Environment."
+- The experimental details should include the following for each experiment:
+    - Machine learning / deep learning models to be used
+        - If necessary, also include baseline models.
+    - Datasets
+    - Dataset preprocessing methods
+    - Data splitting method (train/val/test, cross-validation)
+    - Number of repetitions (number of seeds), averaging method, and selection criteria (best-val, last, early stopping)
+    - Evaluation metrics
+        - Primary and secondary metrics
+        - Examples: Accuracy / F1 / AUROC (classification), RMSE / MAE (regression), mAP (detection), mIoU (segmentation), BLEU / ROUGE / METEOR (generation), NDCG / MRR (ranking), ECE / Brier Score (calibration)
+    - Comparisons
+        - Prior methods (strong baselines, SOTA, simple baselines), etc.
+        - If there are implementation or configuration differences, note the adjustments in footnotes.
+    - Methods for analyzing important hyperparameters (e.g., learning rate, temperature, k, thresholds)
+    - Methods for assessing robustness
+        - Resistance to noise injection, distribution shift (OOD), adversarial perturbations, and domain transfer
+    - Computation of FLOPs, training/inference time, memory usage, and cost / wall-clock time
+    - Example experimental code
+- Avoid excessive redundancy across experiments. When a single experiment can cover multiple validation items, integrate them appropriately.
+- NO-FALLBACK CONSTRAINT: Never suggest using synthetic/dummy/placeholder data.
+- Also provide:
+    - expected_models: A list of specific model names/architectures that will be used across all experiments (e.g., ["ResNet-50", "BERT-base", "GPT-3.5-turbo"])
+    - expected_datasets: A list of specific dataset names that will be used across all experiments (e.g., ["CIFAR-10", "ImageNet", "IMDB Reviews"])
+
+## Output Format
+Please provide:
+- experiments: A list of 2 Experiment objects, each with:
+    - experiment_id: Unique identifier
+    - run_variations: List of variation names/identifiers for this experiment
+    - description: Detailed description including all aspects mentioned in the instructions
+- expected_models: List of model names/architectures
+- expected_datasets: List of dataset names
+
+# Experimental Environment
+NVIDIA A100
+VRAM：80GB
+RAM：2048 GB
+
+# Current Research Method (Target for Experiment Design)
+{
+    "Open Problems": "Token-level strictly–proper scoring rules such as the Brier or Spherical score improve generation quality when used for fine-tuning, but they converge slowly and under-perform when models are trained from scratch.  The root cause is that bounded scores give much smaller early gradients than the unbounded logarithmic score, so learning stalls in the high-entropy regime.  A minimal change that keeps the advantages of bounded scores while restoring strong early gradients is still missing.",
+    "Methods": "We propose Hybrid Proper Scoring (HyProS).\n1.  Loss definition\n    L(θ) = (1−λ) · Slog(θ)  +  λ · SBrier(θ)\n    where Slog is the usual token-level negative log-likelihood and SBrier is the token-level Brier score.\n2.  Dynamic weight λ\n    λ starts near 0 (pure log-loss) and is annealed to 1 (pure Brier) over training steps t:\n        λ(t) = sigmoid((t−T0)/τ)\n    with T0≈0.3·Ttotal and τ≈0.1·Ttotal.\n3.  Motivation\n    • Large early gradients from Slog drive rapid entropy reduction.\n    • As the model becomes competent, λ→1 lets the bounded Brier score shape a better calibration / generation trajectory.\n    • The schedule needs no extra hyper-parameters beyond (T0,τ) and introduces <10 lines of code.",
+    "Experimental Setup": "Model: Transformer-base trained from scratch on WMT14 En-De.\nBaselines: (a) pure Log loss, (b) pure Brier loss, (c) HyProS.\nTraining: identical optimiser / lr schedule for all runs, 100 k steps.\nEvaluation: BLEU on newstest14, validation perplexity every 5 k steps to measure convergence speed.\nAblation: fixed λ=0.5 to show the benefit of the annealing schedule.",
+    "Experimental Code": "class HybridBrierLoss(nn.Module):\n    def __init__(self, vocab_size, t0, tau, total_steps):\n        super().__init__()\n        self.v = vocab_size\n        self.t0, self.tau = t0, tau\n        self.total = total_steps\n        self.register_buffer('step', torch.tensor(0))\n\n    def forward(self, logits, targets):\n        # logits: (B,T,V), targets: (B,T)\n        p = torch.softmax(logits, -1)\n        one_hot = torch.nn.functional.one_hot(targets, self.v).float()\n        sbrier = ((p - one_hot)**2).sum(-1)          # Brier per token\n        slog   = torch.nn.functional.cross_entropy(\n                    logits.view(-1, self.v), targets.view(-1), reduction='none')\n        slog   = slog.view_as(sbrier)\n        # weight\n        t = self.step.item()\n        lam = torch.sigmoid((t - self.t0) / self.tau)\n        self.step += 1\n        loss = (1 - lam) * slog + lam * sbrier\n        return loss.mean()\n\n# Usage inside training loop\ncriterion = HybridBrierLoss(vocab_size, t0=0.3*TOTAL_STEPS, tau=0.1*TOTAL_STEPS, total_steps=TOTAL_STEPS)\nfor step, (inp, tgt) in enumerate(loader):\n    logits = model(inp)\n    loss = criterion(logits, tgt)\n    loss.backward(); opt.step(); opt.zero_grad()",
+    "Expected Result": "•   Convergence: HyProS matches the log-loss perplexity curve for the first ~30 k steps and overtakes the pure Brier run by >2× at 20 k steps.\n•   Final BLEU: Log = 27.3, Brier = 26.8, HyProS ≈ 27.8 (+0.5 over log, +1.0 over Brier).\n•   Calibration (Brier score on dev): HyProS equals Brier and beats Log.\nThus the hybrid schedule removes Brier’s slow-start disadvantage while retaining its generation benefits.",
+    "Expected Conclusion": "A simple, two-line weighted combination of log-loss and Brier loss with a sigmoid schedule eliminates the slow-convergence problem of bounded strictly proper scores.  Because no additional model parameters or complex algorithms are introduced, HyProS can be dropped into any existing training script.  The result is faster training, equal-or-better BLEU, and improved probability calibration, demonstrating that minimal objective tweaks can yield meaningful gains."
+}
+
+# Experiment Strategy
+Global goal
+Demonstrate that Hybrid Proper Scoring (HyProS) simultaneously (a) preserves the fast early-stage learning of the unbounded log-loss, (b) inherits the calibration / generation quality of bounded scores, and (c) does so with negligible computational overhead, across data scales, model sizes and NLP tasks.
+
+1. Aspects to validate
+1.1 Learning dynamics – early-stage gradient magnitude, perplexity/accuracy curves, time-to-reach given performance.
+1.2 End-task performance – BLEU, ROUGE-L, F1, perplexity, accuracy, depending on task.
+1.3 Calibration – token-level Brier, Expected Calibration Error, reliability diagrams.
+1.4 Robustness & generalization – OOD test sets, adversarially perturbed inputs, zero-shot transfer tasks.
+1.5 Efficiency – GPU hours, wall-clock time, peak VRAM, energy where available.
+1.6 Stability – variance across ≥3 random seeds, sensitivity to λ-schedule hyper-parameters.
+
+2. Comparison families
+2.1 Core baselines: (i) pure log-loss (NLL), (ii) pure bounded score (Brier or Spherical, matched to task).
+2.2 SOTA scoring-rule hybrids: focal-style λ·log +(1-λ)·Brier with fixed λ, or curriculum schemes from literature.
+2.3 Ablations of HyProS: fixed λ values; linear instead of sigmoid schedule; altered (T0,τ) ratios; removing Brier in late stages (λ→0 again).
+2.4 Model-size controls: tiny, base, large checkpoints trained with each objective to separate scaling-law effects from loss-function effects.
+
+3. Experimental angles
+3.1 Quantitative
+    • Learning curves: metric v.s. steps & wall-clock; area-under-curve until convergence.
+    • Calibration metrics at multiple checkpoints.
+    • Compute profile: TFLOPs, memory, forward/backward time.
+3.2 Qualitative
+    • Human side-by-side rating of sampled generations (translation adequacy/fluency, summarization faithfulness, open-ended text).
+    • Reliability diagrams & entropy histograms illustrating calibration changes over training.
+3.3 Stress / robustness
+    • Evaluate on noisy inputs (e.g., swapped words, typos), distribution shifts (different domain) and adversarial triggers; report relative degradation.
+    • Analyse gradient norms during first 10 k steps to confirm hypothesis about early-stage signal.
+
+4. Multi-task matrix
+Train &/or fine-tune identical architectures on:
+    MT (WMT14 En-De, low-resource IWSLT15 Viet-En),
+    Language modelling (WikiText-103, The Pile-10 B subset),
+    Summarization (CNN/DailyMail),
+    Text classification (SST-2, AG-News).
+Same strategy, dataloader, optimiser; swap task metric accordingly. A100-80 GB memory enables batch sizes ≥256 tokens per GPU for “large” models (≈500 M params) while keeping compute within 2 k GPU-hours.
+
+5. Validation criteria for success
+HyProS is judged superior if, averaged over tasks/models/seeds, it fulfils ALL of:
+    C1  ≤3 % overhead in wall-clock per step.
+    C2  ≥0.3 σ better final task metric than log-loss OR matched performance with ≥25 % faster time-to-target.
+    C3  ≥10 % lower ECE or token-level Brier than log-loss with no worse end-task metric.
+    C4  No statistically significant degradation vs bounded-score baseline on robustness tests.
+    C5  Positive or neutral gains reproduced in ≥80 % of instance comparisons (binomial p<0.05).
+
+6. Execution workflow
+6.1 Implement objective as drop-in PyTorch module (provided code). Add callback to log λ, gradient norms.
+6.2 For each task x model-size create identical training scripts differing only in loss choice & ablation flags.
+6.3 Use deterministic initialisation and three seeds; allocate one A100 per run; log to WandB for unified dashboards.
+6.4 Automate metric extraction & statistical analysis (paired t-test, bootstrap) via a shared Jupyter notebook.
+6.5 Summarise results in four figure categories: (a) Learning curves, (b) Calibration curves, (c) Robustness bars, (d) Efficiency tables.
+
+This unified experimental strategy ensures that every subsequent experiment—regardless of dataset or model—follows the same comparison groups, evaluation dimensions and success thresholds, providing a holistic, multi-perspective validation of HyProS.
+
+---
+
+
+# Reference Information from Previous Iteration
+
+Output:
+{
+    "experiments": [
+        {
+            "experiment_id": "exp-1-mt-core",
+            "run_variations": [
+                "log-loss",
+                "brier",
+                "hypros",
+                "hypros-fixed-lambda",
+                "hypros-linear-schedule"
+            ],
+            "description": "Objective / hypothesis:\nQuantitatively demonstrate that HyProS (i) matches the fast convergence of the unbounded log-loss during the high-entropy phase, (ii) surpasses both log-loss and pure Brier at final BLEU, (iii) yields better probability calibration, all with ≤3 % computational overhead.  We restrict this experiment to neural machine translation, because translation exposes token-level probabilities over a large vocabulary and has well-established metrics.\n\nModels:\n• Transformer-Base (≈90 M params)\n• Transformer-Big  (≈200 M params)\n(The two sizes allow us to verify scaling-law independence.)\n\nDatasets:\n• High-resource: WMT14 English→German\n    – train: official 4.5 M pairs after standard filtering\n    – val: newstest2013\n    – test: newstest2014\n• Low-resource: IWSLT15 Vietnamese→English\n    – splits: as released (train/valid/test)\n\nPre-processing:\n1. Learn a joint 32 k BPE vocabulary with SentencePiece per language pair.\n2. Lower-case and normalize punctuation (Moses scripts).\n\nData splitting:\n• Fixed train/val/test as above.  No cross-validation.\n\nTraining protocol (identical for every run):\n• Optimizer: Adam (β1=0.9, β2=0.98); learning-rate 5e-4 with inverse-sqrt schedule, 4k warm-up steps.\n• Batch size: 4 096 tokens × 8 GPUs (A100-80 GB) ⇒ effective 32 k.\n• 100 k updates (WMT), 30 k (IWSLT).  Early-stop if val-BLEU plateaus 10 epochs.\n• Seeds: 3.  Report mean±std.  Model selection: best val-BLEU checkpoint.\n\nRun variations:\n1. log-loss: standard NLL.\n2. brier: pure token-level Brier score.\n3. hypros: proposed sigmoid schedule with T₀ = 0.3 T, τ = 0.1 T.\n4. hypros-fixed-lambda: λ = 0.5 for all steps (ablation of schedule).\n5. hypros-linear-schedule: λ increases linearly instead of sigmoid (tests schedule shape).\n\nEvaluation metrics:\nPrimary: BLEU (sacreBLEU v2)\nSecondary: token-level perplexity, token-level Brier, Expected Calibration Error (ECE, 10 bins), training wall-clock, TFLOPs, peak VRAM.\nLearning-dynamics: perplexity & gradient-norm curves every 1 k steps; area-under-BLEU-curve until 26 BLEU.\n\nHyper-parameter sensitivity:\n• Additional side runs (not counted as main variations) sweep τ ∈ {0.05,0.2} T on WMT14/Transformer-Base; report performance heat-map.\n\nRobustness inside this experiment (lightweight):\n• Evaluate on noisy test set where 10 % of source words are swapped.\n• Compute relative BLEU drop.\n\nCompute-efficiency measurement:\n• PyTorch profiler captures per-step forward/backward time for first 100 batches.\n• FLOPs via ptflops; memory via CUDA peak.\n• Energy approximated from NVIDIA-SM power draw.\n\nExample code fragment:\n```\ncriterion = HybridBrierLoss(vocab, 0.3*TOTAL, 0.1*TOTAL)\nfor step, batch in enumerate(loader):\n    loss = criterion(model(batch.src), batch.tgt)\n    loss.backward(); optim.step(); ...\n    if step % 1000 == 0:\n        log_gradients(model)  # plots for learning-dynamics\n```\n\nExpected outcome:\n• HyProS reaches 25 BLEU ≈20 % faster than log-loss and ≈3× faster than Brier.\n• Final BLEU: log 27.3, brier 26.8, hypros 27.9, hypros-fixed-λ 27.0, hypros-linear 27.6.\n• ECE: hypros ≈ 0.023 (↓15 % from log), equal to brier.\n• Overhead: +1.1 % GPU-hours vs log-loss.\n\nAll code for this experiment lives in branch exp-1-mt-core."
+        },
+        {
+            "experiment_id": "exp-2-robust-eff",
+            "run_variations": [
+                "log-loss",
+                "brier",
+                "hypros",
+                "hypros-noanneal"
+            ],
+            "description": "Objective / hypothesis:\nTest whether the gains of HyProS generalise to different NLP tasks and under distribution shift while satisfying the efficiency constraint C1.  We focus on summarisation and sentence-level classification, and subject models to input perturbations, domain transfer and adversarial triggers.  Additionally, we measure inference-time cost to verify negligible overhead.\n\nTasks & Models:\n• Summarisation: BART-Base (140 M) on CNN/DailyMail → evaluate ROUGE-1/2/L.\n• Text classification: RoBERTa-Base (125 M) fine-tuned on SST-2 → evaluate accuracy / F1.\nLoss is applied at the token level for decoder-side (summarisation) and at the masked-token level for CLS-representation training (classification).\n\nDatasets & splits:\n1. CNN/DailyMail v3.0 → standard train/val/test.\n2. SST-2 (GLUE) → train (67 k), dev (872), test (1.8 k, no labels – use dev for reporting).\n   OOD sets:\n   • XSum (summarisation domain shift)\n   • IMDb movie reviews (classification domain shift)\n\nPre-processing:\n• Original BART/RoBERTa tokenisers.\n• Max sequence lengths: 512 (CNN/DM), 128 (SST-2).\n\nTraining:\n• BART: label-smoothing 0.1, Adam, lr 3e-5, batch 256 tokens, 30k updates.\n• RoBERTa: AdamW, lr 1e-5, batch 64 sentences, 10 epochs.\n• Early stopping on val ROUGE-L / accuracy.\n• Seeds: 3.\n• Selection: best val metric checkpoint.\n\nRun variations:\n1. log-loss: standard objective.\n2. brier: bounded score.\n3. hypros: sigmoid schedule as defined.\n4. hypros-noanneal: λ schedule ends by returning to 0 after peaking at 0.5 (tests late-stage reliance on Brier).\n\nEvaluation metrics:\nSummarisation – Primary: ROUGE-L; Secondary: ROUGE-1/2, Brier, ECE.\nClassification – Primary: Accuracy; Secondary: F1, Brier, ECE.\nEfficiency – Inference tokens/s (BART) or sentences/s (RoBERTa), average latency, memory footprint.\n\nRobustness protocol:\nA. Noise injection – randomly swap 5 % word positions.\nB. Adversarial triggers – add universal sentiment shifter phrase (classification) or distractor sentence (summarisation); measure metric drop.\nC. OOD – evaluate BART model fine-tuned on CNN/DM directly on XSum; evaluate RoBERTa on IMDb.\n\nHyper-parameter diagnostics:\n• For HyProS runs, sweep λ_max ∈ {0.7,1.0} and τ ∈ {0.05,0.15} T on validation only; plot metric surface.\n\nCompute logging:\n• WandB system metrics + NVIDIA-SMI every minute for VRAM & power.\n• Torch-profiler for per-batch FLOPs and kernel time.\n\nExample experimental snippet (classification):\n```\nloss_fn = HybridBrierLoss(vocab, 0.1*total, 0.05*total)\nfor batch in loader:\n    logits = model(batch.input_ids)\n    token_loss = loss_fn(logits, batch.labels.expand_as(logits.argmax(-1)))\n    cls_loss = token_loss[:,0].mean(); cls_loss.backward()\n```\n\nExpected results:\n• Summarisation: ROUGE-L – log 44.2, brier 43.6, hypros 44.7 (+0.5), hypros-noanneal 44.0.\n• Classification: Accuracy – log 94.1 %, brier 93.8 %, hypros 94.4 %, hypros-noanneal 94.0 %.\n• Calibration: HyProS lowers ECE by ≈20 % vs log across both tasks.\n• Robustness: HyProS shows ≤1 % extra degradation vs Brier and <½ degradation of log-loss.\n• Inference speed change <0.5 % relative to log-loss.\n\nBranch name: exp-2-robust-eff."
+        }
+    ],
+    "expected_models": [
+        "Transformer-base",
+        "Transformer-big",
+        "BART-base",
+        "RoBERTa-base"
+    ],
+    "expected_datasets": [
+        "WMT14 En-De",
+        "IWSLT15 Vi-En",
+        "CNN/DailyMail",
+        "SST-2",
+        "XSum"
+    ]
+}
