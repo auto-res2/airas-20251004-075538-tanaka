@@ -1,0 +1,17 @@
+
+Input:
+# Task
+You carefully read the contents of the “Paper Outline” and select one GitHub link from the “GitHub URLs List” that you think is most relevant to the contents.
+# Constraints
+- Output the index number corresponding to the selected GitHub URL.
+- Be sure to select only one GitHub URL.
+- If there is no related GitHub link, output None.
+# Paper Outline
+EMO replaces MLE with Earth Mover Distance (EMD) as the token-level probability distance measure to align model and human language distributions. It formulates EMD for auto-regressive language modeling as the minimum cost to transport probability mass from the model distribution to the data distribution. The transport cost function C(vi, vj) is defined using the cosine distance between token embeddings from a fixed, pre-trained language modeling head. To overcome the high computational complexity and non-differentiability of direct EMD computation, a tractable differentiable upper bound (DEMD) is derived, enabling efficient gradient-based optimization. DEMD harmonizes recall and precision, offers negative diversity awareness by weighting gradients based on expected transport cost, and improves train-test consistency. For stable training, especially with weaker models, the final loss function dynamically combines MLE and DEMD in a weighted manner.
+
+# GitHub URLs List
+['https://github.com/DRSY/EMO', 'https://github.com/open-compass/opencompass', 'https://github.com/tatsu-lab/alpaca_eval', 'https://github.com/open-compass/opencompass', 'https://github.com/tatsu-lab/stanford_alpaca']
+Output:
+{
+    "index": 0
+}
