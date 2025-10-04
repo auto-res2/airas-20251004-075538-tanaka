@@ -1,0 +1,17 @@
+
+Input:
+# Task
+You carefully read the contents of the “Paper Outline” and select one GitHub link from the “GitHub URLs List” that you think is most relevant to the contents.
+# Constraints
+- Output the index number corresponding to the selected GitHub URL.
+- Be sure to select only one GitHub URL.
+- If there is no related GitHub link, output None.
+# Paper Outline
+The core methodology revolves around Diff-eRank, defined as the difference between the effective rank (eRank) of representations from an untrained model (M0) and a trained model (M1) for a given input. The eRank of representations from a model is calculated based on the covariance matrix of its hidden states, normalized and then subjected to an exponential function of its matrix entropy. A lower eRank signifies more structured and compact representations due to redundant information removal. For MLLMs, new metrics based on eRank are introduced: 'Image Reduction Ratio' (quantifying visual information condensation by the connector network) and 'Image-Text Alignment' (evaluating the closeness of eRanks between image, text, and combined image-text representations post-LLM processing). Ablation studies explored alternative Diff-eRank algorithms (average matrix entropy vs. average effective rank) and its measurement across different layers of LLMs.
+
+# GitHub URLs List
+['https://github.com/waltonfuture/Diff-eRank', 'https://github.com/open-compass/opencompass']
+Output:
+{
+    "index": 0
+}
