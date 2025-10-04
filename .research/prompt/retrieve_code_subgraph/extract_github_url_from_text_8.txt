@@ -1,0 +1,17 @@
+
+Input:
+# Task
+You carefully read the contents of the “Paper Outline” and select one GitHub link from the “GitHub URLs List” that you think is most relevant to the contents.
+# Constraints
+- Output the index number corresponding to the selected GitHub URL.
+- Be sure to select only one GitHub URL.
+- If there is no related GitHub link, output None.
+# Paper Outline
+The researchers pre-trained over 30 Transformer LMs from scratch with varied model (300M to 32B parameters) and data sizes (33B to 3T tokens), while keeping the data corpus, tokenization, and model architecture (similar to LLaMA with grouped-query attention and rotary position embedding) fixed. They evaluated their downstream performance on 12 diverse English and Chinese datasets, covering tasks like QA, NLI, reading comprehension, coreference resolution, examination, and math word problems, using few-shot, zero-shot, and few-shot CoT prompting. The generality of observations was further validated by analyzing public LLaMA and Pythia models. To address concerns about discontinuous metrics, performance on emergent tasks was also evaluated using continuous metrics like CorrectChoiceProb and Brier Score.
+
+# GitHub URLs List
+['https://github.com/togethercomputer/RedPajama-Data']
+Output:
+{
+    "index": 0
+}
