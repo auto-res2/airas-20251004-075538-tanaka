@@ -6,5 +6,82 @@
     "新規 損失関数 LLM",
     "言語モデル 損失 最適化",
     "LLM 損失 改良"
+  ],
+  "research_study_list": [
+    {
+      "title": "Language Generation with Strictly Proper Scoring Rules"
+    },
+    {
+      "title": "Discovering Preference Optimization Algorithms with and for Large Language Models"
+    },
+    {
+      "title": "Beyond MLE: Convex Learning for Text Generation"
+    },
+    {
+      "title": "Model Alignment as Prospect Theoretic Optimization"
+    },
+    {
+      "title": "Risk-Averse Fine-tuning of Large Language Models"
+    },
+    {
+      "title": "Language Generation with Strictly Proper Scoring Rules"
+    },
+    {
+      "title": "Straight to the Gradient: Learning to Use Novel Tokens for Neural Text Generation"
+    },
+    {
+      "title": "Straight to the Gradient: Learning to Use Novel Tokens for Neural Text Generation"
+    },
+    {
+      "title": "Understanding Emergent Abilities of Language Models from the Loss Perspective"
+    },
+    {
+      "title": "EMO: EARTH MOVER DISTANCE OPTIMIZATION FOR AUTO-REGRESSIVE LANGUAGE MODELING"
+    },
+    {
+      "title": "Discovering Preference Optimization Algorithms with and for Large Language Models"
+    },
+    {
+      "title": "Language Generation with Strictly Proper Scoring Rules"
+    },
+    {
+      "title": "Beyond MLE: Convex Learning for Text Generation"
+    },
+    {
+      "title": "Model Alignment as Prospect Theoretic Optimization"
+    },
+    {
+      "title": "Diff-eRank: A Novel Rank-Based Metric for Evaluating Large Language Models"
+    },
+    {
+      "title": "EMO: EARTH MOVER DISTANCE OPTIMIZATION FOR AUTO-REGRESSIVE LANGUAGE MODELING"
+    },
+    {
+      "title": "Implicit Optimization Bias of Next-token Prediction in Linear Models"
+    },
+    {
+      "title": "Beyond MLE: Convex Learning for Text Generation"
+    },
+    {
+      "title": "Language Generation with Strictly Proper Scoring Rules"
+    },
+    {
+      "title": "Straight to the Gradient: Learning to Use Novel Tokens for Neural Text Generation"
+    },
+    {
+      "title": "Language Generation with Strictly Proper Scoring Rules"
+    },
+    {
+      "title": "Gaining Wisdom from Setbacks: Aligning Large Language Models via Mistake Analysis"
+    },
+    {
+      "title": "Beyond Imitation: Leveraging Fine-grained Quality Signals for Alignment"
+    },
+    {
+      "title": "The Truth is in There: Improving Reasoning in Language Models with Layer-Selective Rank Reduction"
+    },
+    {
+      "title": "Risk-Averse Fine-tuning of Large Language Models"
+    }
   ]
 }
