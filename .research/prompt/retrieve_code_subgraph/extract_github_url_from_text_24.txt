@@ -1,0 +1,17 @@
+
+Input:
+# Task
+You carefully read the contents of the “Paper Outline” and select one GitHub link from the “GitHub URLs List” that you think is most relevant to the contents.
+# Constraints
+- Output the index number corresponding to the selected GitHub URL.
+- Be sure to select only one GitHub URL.
+- If there is no related GitHub link, output None.
+# Paper Outline
+The methodology adapts the Risk-Averse Reinforcement Learning (RARL) approach to the standard Reinforcement Learning with Human Feedback (RLHF) pipeline, optimizing the Conditional Value at Risk (CVaR) of the return instead of the expected value. It employs a soft-risk scheduling mechanism, inspired by the CeSoR algorithm, to gradually introduce risk-aversion. This involves an initial training phase where the full batch of episodes is used, followed by a gradual reduction of the batch size to focus on trajectories with the lowest returns (worst-case scenarios). The approach starts with a supervised fine-tuned (SFT) base policy for positive episode recognition and regularizes against it using a KL-Divergence term in the reward function. Proximal Policy Optimization (PPO) is used for policy updates, operating in an Actor-Critic setting with a base transformer extended by a language modeling head (actor) and a value function head (critic).
+
+# GitHub URLs List
+['https://github.com/SapanaChaudhary/RA-RLHF', 'https://github.com/huggingface/trl', 'https://github.com/huggingface/evaluate']
+Output:
+{
+    "index": 0
+}
